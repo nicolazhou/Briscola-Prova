@@ -1,11 +1,17 @@
 extends SceneTree
 
+const DIFFICULTIES := ["easy", "normal", "hard"]
+
 func _initialize() -> void:
     seed(123456)
     _test_card_rules()
     _test_initial_state()
-    _test_complete_random_games()
-    print("BriscolaEngine: self-test OK (rules + 200 simulated games)")
+    _test_assets_exist()
+    _test_state_roundtrip()
+    _test_ai_memory_contract()
+    _test_complete_random_games(300)
+    _test_games_against_ai(100)
+    print("BriscolaEngine: self-test OK (rules + save roundtrip + assets + 600 simulated games)")
     quit()
 
 
@@ -31,38 +37,128 @@ func _test_initial_state() -> void:
     assert(engine.hands["human"].size() == 3)
     assert(engine.hands["cpu"].size() == 3)
     assert(engine.trump_suit in BriscolaEngine.SUITS)
+    assert(engine.played_history.is_empty())
 
     var seen := {}
     for value in engine.deck:
         var card: Dictionary = value
-        seen["%s-%d" % [str(card["suit"]), int(card["rank"])]] = true
+        seen[engine.card_key(card)] = true
     for player in ["human", "cpu"]:
         for value in engine.hands[player]:
             var card: Dictionary = value
-            seen["%s-%d" % [str(card["suit"]), int(card["rank"])]] = true
+            seen[engine.card_key(card)] = true
     assert(seen.size() == 40)
+    assert(engine.unknown_cards_for_cpu().size() == 36)
 
 
-func _test_complete_random_games() -> void:
-    for _game_index in range(200):
+func _test_assets_exist() -> void:
+    var engine := BriscolaEngine.new()
+    for suit in BriscolaEngine.SUITS:
+        for rank in BriscolaEngine.RANKS:
+            var card: Dictionary = {"suit": suit, "rank": rank}
+            assert(FileAccess.file_exists(engine.card_texture_path(card)))
+    assert(FileAccess.file_exists("res://assets/cards/retro.svg"))
+    assert(FileAccess.file_exists("res://assets/audio/card_play.wav"))
+    assert(FileAccess.file_exists("res://assets/audio/card_take.wav"))
+
+
+func _test_state_roundtrip() -> void:
+    var engine := BriscolaEngine.new()
+    engine.new_game()
+
+    # Salva anche uno stato a metà presa, il caso più importante per il resume.
+    var human_card: Dictionary = engine.play_card("human", 0)
+    assert(not human_card.is_empty())
+    assert(engine.table.size() == 1)
+    assert(engine.current_player == "cpu")
+
+    var state: Dictionary = engine.to_dict()
+    var json_text: String = JSON.stringify(state)
+    var parsed: Variant = JSON.parse_string(json_text)
+    assert(typeof(parsed) == TYPE_DICTIONARY)
+    var restored_state: Dictionary = parsed
+    var restored := BriscolaEngine.new()
+    assert(restored.load_from_dict(restored_state))
+    assert(restored.table.size() == 1)
+    assert(restored.current_player == "cpu")
+    assert(restored.deck.size() == engine.deck.size())
+    assert(restored.hands["human"].size() == engine.hands["human"].size())
+    assert(restored.hands["cpu"].size() == engine.hands["cpu"].size())
+    var restored_play: Dictionary = restored.table[0]
+    var original_play: Dictionary = engine.table[0]
+    var restored_card: Dictionary = restored_play["card"]
+    var original_card: Dictionary = original_play["card"]
+    assert(restored.card_key(restored_card) == engine.card_key(original_card))
+
+    var cpu_index: int = restored.choose_cpu_card("hard")
+    assert(cpu_index >= 0 and cpu_index < restored.hands["cpu"].size())
+    assert(not restored.play_card("cpu", cpu_index).is_empty())
+    assert(not restored.resolve_trick().is_empty())
+    assert(restored.played_history.size() == 2)
+
+
+func _test_ai_memory_contract() -> void:
+    var engine := BriscolaEngine.new()
+    engine.new_game()
+    assert(engine.unknown_cards_for_cpu().size() == 36)
+
+    # La CPU risponde a una carta umana; la carta sul tavolo entra tra le informazioni note.
+    assert(not engine.play_card("human", 0).is_empty())
+    assert(engine.unknown_cards_for_cpu().size() == 35)
+    var hard_index: int = engine.choose_cpu_card("hard")
+    assert(hard_index >= 0 and hard_index < engine.hands["cpu"].size())
+    assert(not engine.play_card("cpu", hard_index).is_empty())
+    assert(engine.unknown_cards_for_cpu().size() == 35)
+    assert(not engine.resolve_trick().is_empty())
+    assert(engine.played_history.size() == 2)
+    assert(engine.unknown_cards_for_cpu().size() == 34)
+
+
+func _test_complete_random_games(count: int) -> void:
+    for _game_index in range(count):
         var engine := BriscolaEngine.new()
         engine.new_game()
-        var guard := 0
-        while not engine.is_game_over():
-            guard += 1
-            assert(guard < 100)
-            var player: String = engine.current_player
-            var hand: Array = engine.hands[player]
-            assert(not hand.is_empty())
-            var index := randi_range(0, hand.size() - 1)
-            var card := engine.play_card(player, index)
-            assert(not card.is_empty())
-            if engine.table.size() == 2:
-                var result := engine.resolve_trick()
-                assert(not result.is_empty())
+        _play_game(engine, "random")
+        _assert_finished_game(engine)
 
-        assert(engine.scores["human"] + engine.scores["cpu"] == 120)
-        assert(engine.trick_number == 21)
-        assert(engine.deck.is_empty())
-        assert(engine.hands["human"].is_empty())
-        assert(engine.hands["cpu"].is_empty())
+
+func _test_games_against_ai(per_difficulty: int) -> void:
+    for difficulty in DIFFICULTIES:
+        for _game_index in range(per_difficulty):
+            var engine := BriscolaEngine.new()
+            engine.new_game()
+            _play_game(engine, difficulty)
+            _assert_finished_game(engine)
+
+
+func _play_game(engine: BriscolaEngine, cpu_mode: String) -> void:
+    var guard := 0
+    while not engine.is_game_over():
+        guard += 1
+        assert(guard < 100)
+        var player: String = engine.current_player
+        var hand: Array = engine.hands[player]
+        assert(not hand.is_empty())
+
+        var index: int = 0
+        if player == "cpu" and cpu_mode != "random":
+            index = engine.choose_cpu_card(cpu_mode)
+        else:
+            index = randi_range(0, hand.size() - 1)
+        assert(index >= 0 and index < hand.size())
+
+        var card: Dictionary = engine.play_card(player, index)
+        assert(not card.is_empty())
+        if engine.table.size() == 2:
+            var result: Dictionary = engine.resolve_trick()
+            assert(not result.is_empty())
+
+
+func _assert_finished_game(engine: BriscolaEngine) -> void:
+    assert(engine.scores["human"] + engine.scores["cpu"] == 120)
+    assert(engine.trick_number == 21)
+    assert(engine.played_history.size() == 40)
+    assert(engine.deck.is_empty())
+    assert(engine.hands["human"].is_empty())
+    assert(engine.hands["cpu"].is_empty())
+    assert(engine.table.is_empty())

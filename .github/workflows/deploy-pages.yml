@@ -80,8 +80,29 @@ jobs:
           mkdir -p build/web
           godot --headless --verbose --path . --export-release "Web" build/web/index.html
           test -f build/web/index.html
+          test -f build/web/index.js
+          test -f build/web/index.wasm
+          test -f build/web/index.pck
           echo "Web export generated:"
           find build/web -maxdepth 1 -type f -printf '%f\n' | sort
+
+      - name: Smoke test exported site
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 -m http.server 8765 --directory build/web >/tmp/briscola-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+          for _i in {1..20}; do
+            if curl -fsS http://127.0.0.1:8765/index.html >/tmp/briscola-index.html; then
+              break
+            fi
+            sleep 0.25
+          done
+          test -s /tmp/briscola-index.html
+          curl -fsS -o /dev/null http://127.0.0.1:8765/index.js
+          curl -fsS -o /dev/null http://127.0.0.1:8765/index.wasm
+          curl -fsS -o /dev/null http://127.0.0.1:8765/index.pck
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

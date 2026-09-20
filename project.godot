@@ -1,14 +1,15 @@
-; Briscola Napoletana - production alpha.
+; Briscola Napoletana - production beta candidate.
 ; Target: Godot 4.3+ / Web single-threaded export.
 config_version=5
 
 [application]
 config/name="Briscola Napoletana"
+config/version="0.6.2-alpha"
 run/main_scene="res://scenes/main.tscn"
 config/icon="res://icon.svg"
 
 [display]
-window/size/viewport_width=1280
+window/size/viewport_width=720
 window/size/viewport_height=720
 window/size/window_width_override=1280
 window/size/window_height_override=720
