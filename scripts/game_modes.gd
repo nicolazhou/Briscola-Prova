@@ -17,8 +17,8 @@ static func catalog() -> Array[Dictionary]:
             "id": TEAMS_4P,
             "name": "Briscola a squadre",
             "players": 4,
-            "status": "beta",
-            "description": "Tu + compagno contro due avversari",
+            "status": "beta2",
+            "description": "Tu + compagno contro due avversari · mano iniziale variabile",
         },
     ]
 

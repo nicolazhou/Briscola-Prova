@@ -6,7 +6,7 @@ import re
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "0.8.1-rc5"
+EXPECTED_VERSION = "0.8.3-rc7"
 SUITS = ("bastoni", "coppe", "denari", "spade")
 
 errors: list[str] = []
@@ -79,6 +79,12 @@ require((ROOT / "scripts/four_player_engine.gd").is_file(), "four-player engine 
 require((ROOT / "scripts/four_player.gd").is_file(), "four-player UI missing")
 require((ROOT / "scenes/four_player.tscn").is_file(), "four-player scene missing")
 require("_test_four_player_mode" in self_test, "four-player simulation test missing")
+require("_test_four_player_starting_players" in self_test, "four-player starting-player coverage missing")
+require("_test_four_player_team_ai_decisions" in self_test, "four-player team AI behavior test missing")
+four_ui = read("scripts/four_player.gd")
+require("_announce_endgame_if_needed" in four_ui, "four-player endgame transition missing")
+require("_random_start_player" in four_ui, "four-player randomized opener missing")
+require("_record_team_feedback" in four_ui, "four-player playtest feedback missing")
 for icon in ("icon-192.png", "icon-512.png", "apple-touch-icon.png"):
     require((ROOT / "assets" / "pwa" / icon).is_file(), f"PWA icon missing: {icon}")
 postprocess = read("tools/postprocess_web.py")
@@ -105,4 +111,4 @@ print(" - production docs present")
 print(" - initial deal + onboarding + restart guard present")
 print(" - cross-browser QA + feedback + monitoring hooks present")
 print(" - persistence roundtrip test present")
-print(" - four-player teams engine/UI and simulation tests present")
+print(" - four-player teams engine/UI, randomized opener, endgame and AI tests present")

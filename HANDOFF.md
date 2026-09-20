@@ -1,9 +1,9 @@
 # Handoff tecnico — Briscola Napoletana
 
-**Versione:** `0.8.1-rc5`  
+**Versione:** `0.8.2-rc6`  
 **Engine:** Godot 4.3 / GDScript  
 **Target:** Web single-threaded / GitHub Pages  
-**Modalità:** 1v1 production/stable + 4 giocatori a squadre Beta + PWA/offline
+**Modalità:** 1v1 production/stable + 4 giocatori a squadre Beta 2 + PWA/offline
 
 ## Stato
 
@@ -110,7 +110,7 @@ P2:
 - PWA solo dopo una strategia di cache/version update testata;
 - multiplayer/account solo dopo stabilizzazione della 1.0 offline.
 
-## 0.8.1-rc5: PWA e modalità
+## 0.8.2-rc6: PWA e modalità
 
 Il ramo stabile resta `classic_2p` (`BriscolaEngine` + `main.gd`). Non fondere il motore 4P dentro l'engine 1v1.
 
@@ -124,3 +124,14 @@ Vedi `PWA.md`, `VARIANTS.md` e `SINGLE_PLAYER_PRODUCTION.md`.
 ## 4P game-feel RC5
 
 `four_player.gd` possiede ora tre layer distinti: `trick_layer` (carte sul tavolo), `capture_layer` (pile NOI/LORO) e `deal_layer` (carte transitorie in volo). Non animare direttamente i nodi della mano per la distribuzione: usa `_animate_flying_card()` e `_visible_hand_counts`, così lo stato logico può restare completo mentre la rivelazione visiva avanza una carta alla volta.
+
+
+## 0.8.2-rc6 — note operative
+
+La modalità 4P ha ora `starting_player` persistito. Non reintrodurre assunzioni UI del tipo “la prima presa parte sempre da human”: deal, badge `DI MANO`, autoplay dei bot e test devono usare `engine.starting_player/current_player`.
+
+Quando `deck.is_empty()` dopo l'ultima sequenza di pescata, la UI entra nel finale di tre prese e rimuove il mazzo con `_announce_endgame_if_needed()`. Questa transizione è solo presentazionale: il motore continua a determinare la fine partita esclusivamente da mazzo/tavolo/mani vuoti.
+
+## QA CI performance (0.8.3-rc7)
+
+Il QA browser e deliberatamente diviso in due livelli. I flussi costosi (save/resume, 4P completa, PWA offline) girano una sola volta su Chromium. Gli altri profili eseguono smoke test in parallelo. Non reintrodurre partite animate complete in `?qa=`: i test browser devono pilotare il motore direttamente; animazioni e game feel appartengono a QA/playtest manuale.

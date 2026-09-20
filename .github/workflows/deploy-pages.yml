@@ -20,7 +20,7 @@ env:
   GODOT_VERSION: "4.3"
   GODOT_RELEASE: "4.3-stable"
   GODOT_TEMPLATE_VERSION: "4.3.stable"
-  BRISCOLA_VERSION: "0.8.1-rc5"
+  BRISCOLA_VERSION: "0.8.3-rc7"
 
 jobs:
   build:
@@ -34,34 +34,49 @@ jobs:
       - name: Release audit
         run: python3 tools/release_audit.py
 
+      - name: Cache Godot runtime and export templates
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/briscola-godot
+            ~/.local/share/godot/export_templates/4.3.stable
+          key: briscola-godot-${{ runner.os }}-4.3-stable-v1
+
       - name: Install Godot 4.3
         shell: bash
         run: |
           set -euxo pipefail
-          curl -fL --retry 3 \
-            -o /tmp/godot.zip \
-            "https://github.com/godotengine/godot-builds/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_RELEASE}_linux.x86_64.zip"
-          unzip -q /tmp/godot.zip -d /tmp/godot
-          GODOT_BIN="$(find /tmp/godot -maxdepth 1 -type f -name 'Godot_v*_linux.x86_64' | head -n 1)"
-          test -n "$GODOT_BIN"
-          chmod +x "$GODOT_BIN"
-          sudo install -m 0755 "$GODOT_BIN" /usr/local/bin/godot
+          CACHE_DIR="$HOME/.cache/briscola-godot"
+          CACHED_GODOT="$CACHE_DIR/godot"
+          mkdir -p "$CACHE_DIR"
+          if [ ! -x "$CACHED_GODOT" ]; then
+            curl -fL --retry 3 \
+              -o /tmp/godot.zip \
+              "https://github.com/godotengine/godot-builds/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_RELEASE}_linux.x86_64.zip"
+            rm -rf /tmp/godot
+            unzip -q /tmp/godot.zip -d /tmp/godot
+            GODOT_BIN="$(find /tmp/godot -maxdepth 1 -type f -name 'Godot_v*_linux.x86_64' | head -n 1)"
+            test -n "$GODOT_BIN"
+            install -m 0755 "$GODOT_BIN" "$CACHED_GODOT"
+          fi
+          sudo install -m 0755 "$CACHED_GODOT" /usr/local/bin/godot
           godot --version
 
       - name: Install official Godot export templates
         shell: bash
         run: |
           set -euxo pipefail
-          curl -fL --retry 3 \
-            -o /tmp/export_templates.tpz \
-            "https://github.com/godotengine/godot-builds/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_RELEASE}_export_templates.tpz"
-          rm -rf /tmp/godot-templates
-          mkdir -p /tmp/godot-templates
-          unzip -q /tmp/export_templates.tpz -d /tmp/godot-templates
-
           TEMPLATE_DIR="$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATE_VERSION}"
           mkdir -p "$TEMPLATE_DIR"
-          cp -a /tmp/godot-templates/templates/. "$TEMPLATE_DIR/"
+          if [ ! -f "$TEMPLATE_DIR/web_nothreads_release.zip" ]; then
+            curl -fL --retry 3 \
+              -o /tmp/export_templates.tpz \
+              "https://github.com/godotengine/godot-builds/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_RELEASE}_export_templates.tpz"
+            rm -rf /tmp/godot-templates
+            mkdir -p /tmp/godot-templates
+            unzip -q /tmp/export_templates.tpz -d /tmp/godot-templates
+            cp -a /tmp/godot-templates/templates/. "$TEMPLATE_DIR/"
+          fi
 
           test -f "$TEMPLATE_DIR/web_release.zip"
           test -f "$TEMPLATE_DIR/web_debug.zip"
@@ -152,6 +167,14 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: "24"
+
+      - name: Cache Playwright browsers and npm downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/.npm
+          key: briscola-playwright-${{ runner.os }}-1.63.0-v1
 
       - name: Install Playwright QA dependencies
         run: |

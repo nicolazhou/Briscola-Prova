@@ -1,4 +1,4 @@
-# Production checklist — 0.8.1-rc5
+# Production checklist — 0.8.2-rc6
 
 ## Stato go / no-go
 
@@ -61,3 +61,14 @@
 - [ ] 300 simulazioni engine 4P verdi.
 - [ ] Deal a quattro lati, presa verso pile NOI/LORO e pescata verificati manualmente.
 - [ ] Nessuna regressione sul ramo 1v1 production.
+
+## Gate 4P Beta 2 -> RC
+
+- [x] Giocatore di mano iniziale variabile e persistito.
+- [x] QA automatico con partenza da bot.
+- [x] Finale senza mazzo esplicitamente segnalato.
+- [x] AI hard testata su comportamento cooperativo di ultima posizione.
+- [x] Feedback difficoltà AI di squadra integrato.
+- [ ] Almeno 20 partite 4P con giocatori reali, distribuite sui quattro posti iniziali.
+- [ ] Nessun bug bloccante su iPhone Safari / Android Chrome reali.
+- [ ] Conferma che il compagno sia percepito come collaborativo, non casuale, nei playtest.

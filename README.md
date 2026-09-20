@@ -1,21 +1,21 @@
-**Versione 0.8.1-rc5**
+**Versione 0.8.3-rc7**
 
 # Briscola Napoletana — Godot 4
 
-Release candidate con **single-player 1v1 production/stable**, **PWA installabile/offline** e **Briscola a 4 giocatori a squadre in Beta**. Target Godot 4.3 Web/GitHub Pages, save locale separato per modalità, QA cross-browser e pipeline di rollback.
+Release candidate con **single-player 1v1 production/stable**, **PWA installabile/offline** e **Briscola a 4 giocatori a squadre in Beta 2**. Target Godot 4.3 Web/GitHub Pages, save locale separato per modalità, QA cross-browser e pipeline di rollback.
 
-## Novità 0.8.1-rc5
+## Novità 0.8.2-rc6
 
-- modalità 4P con distribuzione animata sui quattro lati;
-- giocate animate dalla mano reale al centro;
-- presa raccolta verso mazzetti visibili `NOI / LORO`;
-- badge `DI MANO` sul giocatore corrente e `MARCO · COMPAGNO`;
-- pescata a quattro animata, inclusa la briscola finale;
-- AI Difficile a squadre che usa solo informazione osservabile e collabora col compagno;
-- 300 simulazioni engine 4P + test legalità AI hard;
-- QA browser dedicato `?qa=4p` su Chromium/Firefox/WebKit + profili iPhone/Android;
-- PWA: gli update non vengono più applicati a metà partita; compare `AGGIORNAMENTO DISPONIBILE · APPLICA`;
-- il ramo 1v1 resta congelato salvo bug/regressioni.
+- il giocatore di mano iniziale 4P varia tra tutti e quattro i posti ed è persistito nel save;
+- distribuzione 4P coerente con il vero ordine di mano;
+- se apre un bot, il tavolo procede automaticamente fino al primo turno umano;
+- transizione esplicita a `MAZZO ESAURITO · ULTIME 3 PRESE`;
+- hard AI a squadre migliorata: carica punti sulla presa certa del compagno, recupera l'ultima carta con il vincente meno costoso e riconosce aperture non superabili nel finale usando solo informazioni osservabili;
+- simulazioni 4P distribuite sui quattro possibili giocatori iniziali;
+- test dedicati al roundtrip di `starting_player` e alle decisioni cooperative dell'AI;
+- QA browser 4P avviato da un bot per coprire il flusso non-human-first;
+- feedback post-partita dedicato alla difficoltà dell’AI di squadra, locale o inviabile all’endpoint playtest;
+- PWA, single-player production, save separati e safe-update restano invariati.
 
 ## Gameplay / UX
 
@@ -49,7 +49,7 @@ npm run test:browser
 
 ```bash
 git add .
-git commit -m "Briscola 0.7.0 rc3"
+git commit -m "Briscola 0.8.2 rc6"
 git push
 ```
 
@@ -92,6 +92,18 @@ Leggere e completare:
 Documenti: `PWA.md`, `VARIANTS.md`, `SINGLE_PLAYER_PRODUCTION.md`.
 
 
-## Novità 0.8.1 RC5
+## Novità 0.8.2 RC6
 
 La modalità 4 giocatori riceve il primo vero passaggio di game-feel: deal alternato sui quattro lati, giocate animate, pile di prese per squadra, indicatore del giocatore di mano e pescata a quattro. Il ramo 1v1 rimane congelato salvo regressioni.
+
+## QA browser veloce (0.8.3-rc7)
+
+La pipeline browser e stata ridisegnata per non riprodurre una partita animata completa su ogni browser.
+
+- Chromium: test completo save/reload/resume, partita 4P QA e PWA offline.
+- Firefox: smoke immediato WASM + WebGL2 in headless Linux; il boot Godot reale resta nella checklist manuale.
+- WebKit desktop, iPhone WebKit e Android Chromium: boot smoke del gioco.
+- Playwright usa 3 worker in CI, senza retry automatici.
+- Le modalita `?qa=fresh`, `?qa=resume` e `?qa=full` pilotano direttamente il motore senza animazioni.
+
+Questo mantiene i gate funzionali principali evitando che un singolo timeout browser blocchi il deploy per diversi minuti.

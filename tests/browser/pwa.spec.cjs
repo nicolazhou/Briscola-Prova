@@ -1,10 +1,8 @@
 const { test, expect } = require('@playwright/test');
 
 test('PWA manifest, service worker and offline boot work', async ({ page, context }, testInfo) => {
-  test.skip(testInfo.project.name !== 'chromium-desktop', 'One deterministic PWA offline check is enough in CI');
-
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => window.__briscolaAppReady === true, null, { timeout: 30000 });
+  await page.waitForFunction(() => window.__briscolaAppReady === true, null, { timeout: 20000 });
 
   const manifestHref = await page.locator('link[rel="manifest"]').getAttribute('href');
   expect(manifestHref).toBe('manifest.webmanifest');
@@ -22,11 +20,11 @@ test('PWA manifest, service worker and offline boot work', async ({ page, contex
     await registration.update();
   });
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => navigator.serviceWorker.controller !== null, null, { timeout: 15000 });
+  await page.waitForFunction(() => navigator.serviceWorker.controller !== null, null, { timeout: 10000 });
 
   await context.setOffline(true);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.locator('canvas')).toBeVisible();
-  await page.waitForFunction(() => window.__briscolaAppReady === true, null, { timeout: 30000 });
+  await page.waitForFunction(() => window.__briscolaAppReady === true, null, { timeout: 20000 });
   await context.setOffline(false);
 });

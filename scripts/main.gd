@@ -530,7 +530,7 @@ func _build_menu_overlay() -> void:
     column.add_child(title)
 
     var subtitle := Label.new()
-    subtitle.text = "1 contro 1 stabile · 4 giocatori a squadre Beta"
+    subtitle.text = "1 contro 1 stabile · 4 giocatori a squadre Beta 2"
     subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     subtitle.add_theme_font_size_override("font_size", 16)
     subtitle.add_theme_color_override("font_color", Color("#b8ccc3"))
@@ -585,7 +585,7 @@ func _build_menu_overlay() -> void:
     column.add_child(play_button)
 
     var four_player_button := Button.new()
-    four_player_button.text = "4 GIOCATORI · SQUADRE  · BETA"
+    four_player_button.text = "4 GIOCATORI · SQUADRE  · BETA 2"
     four_player_button.custom_minimum_size = Vector2(290, 50)
     _style_button(four_player_button, false)
     four_player_button.pressed.connect(_open_four_player)
@@ -2155,6 +2155,10 @@ func _run_web_qa(mode: String) -> void:
         _set_web_qa_status("switching-4p")
         get_tree().change_scene_to_file("res://scenes/four_player.tscn")
         return
+
+    # QA browser: verifica regole + persistenza senza riprodurre le animazioni.
+    # Le animazioni sono coperte dai playtest/manual QA; in CI aspettarle per
+    # ogni browser rendeva la pipeline molto lenta e introduceva timeout inutili.
     _set_web_qa_status("starting")
     settings["tutorial_seen"] = true
     settings["reduced_motion"] = true
@@ -2162,23 +2166,21 @@ func _run_web_qa(mode: String) -> void:
     cpu_difficulty = "normal"
     settings["difficulty"] = cpu_difficulty
     persistence.save_settings(settings)
-    if reduced_motion_toggle != null:
-        reduced_motion_toggle.button_pressed = true
-    if sound_toggle != null:
-        sound_toggle.button_pressed = false
 
     if mode == "fresh":
         persistence.clear_saved_game()
-        await _new_game()
-        var human_moves := 0
-        while not engine.is_game_over() and human_moves < 5:
-            if not busy and engine.current_player == "human":
-                human_moves += 1
-                await _on_player_card_pressed(0)
-            else:
-                await get_tree().process_frame
-        _save_progress()
+        engine.new_game()
+        if not _qa_drive_classic_game(3, false):
+            _set_web_qa_status("failed-drive")
+            return
+        if not persistence.save_game(engine.to_dict(), cpu_difficulty):
+            _set_web_qa_status("failed-save")
+            return
         JavaScriptBridge.force_fs_sync()
+        # Lascia due frame al filesystem Web/IndexedDB prima che Playwright
+        # ricarichi la pagina nello stesso browser context.
+        await get_tree().process_frame
+        await get_tree().process_frame
         _set_web_qa_status("saved")
         return
 
@@ -2186,15 +2188,16 @@ func _run_web_qa(mode: String) -> void:
         if not persistence.has_saved_game():
             _set_web_qa_status("failed-no-save")
             return
-        await _resume_saved_game()
-        var safety_moves := 0
-        while not engine.is_game_over() and safety_moves < 40:
-            if not busy and engine.current_player == "human":
-                safety_moves += 1
-                await _on_player_card_pressed(0)
-            else:
-                await get_tree().process_frame
-        if engine.is_game_over():
+        var payload: Dictionary = persistence.load_game()
+        var state: Dictionary = payload.get("engine", {})
+        if state.is_empty() or not engine.load_from_dict(state):
+            _set_web_qa_status("failed-load")
+            return
+        if not _qa_drive_classic_game(99, true):
+            _set_web_qa_status("failed-drive")
+            return
+        var total_score: int = int(engine.scores["human"]) + int(engine.scores["cpu"])
+        if engine.is_game_over() and total_score == 120:
             _set_web_qa_status("complete")
         else:
             _set_web_qa_status("failed-timeout")
@@ -2202,18 +2205,47 @@ func _run_web_qa(mode: String) -> void:
 
     if mode == "full":
         persistence.clear_saved_game()
-        await _new_game()
-        var full_safety_moves := 0
-        while not engine.is_game_over() and full_safety_moves < 40:
-            if not busy and engine.current_player == "human":
-                full_safety_moves += 1
-                await _on_player_card_pressed(0)
-            else:
-                await get_tree().process_frame
-        _set_web_qa_status("complete" if engine.is_game_over() else "failed-timeout")
+        engine.new_game()
+        if not _qa_drive_classic_game(99, true):
+            _set_web_qa_status("failed-drive")
+            return
+        var total_score: int = int(engine.scores["human"]) + int(engine.scores["cpu"])
+        _set_web_qa_status("complete" if engine.is_game_over() and total_score == 120 else "failed-timeout")
         return
 
     _set_web_qa_status("failed-unknown-mode")
+
+
+func _qa_drive_classic_game(max_human_moves: int, finish_game: bool) -> bool:
+    var human_moves: int = 0
+    var guard: int = 0
+    while not engine.is_game_over():
+        guard += 1
+        if guard > 120:
+            return false
+        if not finish_game and human_moves >= max_human_moves and engine.table.is_empty():
+            return true
+
+        var player: String = engine.current_player
+        var hand: Array = engine.hands[player]
+        if hand.is_empty():
+            return false
+
+        var index: int = 0
+        if player == "cpu":
+            index = engine.choose_cpu_card("normal")
+        else:
+            human_moves += 1
+        if index < 0 or index >= hand.size():
+            return false
+        if engine.play_card(player, index).is_empty():
+            return false
+        if engine.table.size() == 2:
+            var result: Dictionary = engine.resolve_trick()
+            if result.is_empty():
+                return false
+
+    return true
 
 
 func _play_sfx(path: String) -> void:

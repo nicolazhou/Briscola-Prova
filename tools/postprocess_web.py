@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / "build" / "web"
 INDEX = BUILD / "index.html"
 
-version = os.environ.get("BRISCOLA_VERSION", "0.8.1-rc5")
+version = os.environ.get("BRISCOLA_VERSION", "0.8.3-rc7")
 commit = os.environ.get("GITHUB_SHA", "local")
 repo = os.environ.get("GITHUB_REPOSITORY", "")
 support_url = os.environ.get("SUPPORT_URL", "").strip()
@@ -209,11 +209,12 @@ runtime = f"""(() => {{
         return false;
       }}
     }},
-    recordPlaytest(difficulty, rating, humanScore, cpuScore) {{
+    recordPlaytest(difficulty, rating, humanScore, cpuScore, mode = 'classic_2p') {{
       const event = {{
         type: 'ai_playtest',
         difficulty: compact(difficulty, 30),
         rating: compact(rating, 30),
+        mode: compact(mode, 30),
         humanScore: Number(humanScore) || 0,
         cpuScore: Number(cpuScore) || 0,
         version: CONFIG.version,

@@ -119,6 +119,15 @@ func load_settings() -> Dictionary:
         "ai_feedback_hard_too_easy": 0,
         "ai_feedback_hard_fair": 0,
         "ai_feedback_hard_too_hard": 0,
+        "team_feedback_easy_too_easy": 0,
+        "team_feedback_easy_fair": 0,
+        "team_feedback_easy_too_hard": 0,
+        "team_feedback_normal_too_easy": 0,
+        "team_feedback_normal_fair": 0,
+        "team_feedback_normal_too_hard": 0,
+        "team_feedback_hard_too_easy": 0,
+        "team_feedback_hard_fair": 0,
+        "team_feedback_hard_too_hard": 0,
     }
     var config := ConfigFile.new()
     var error: Error = config.load(SETTINGS_PATH)
@@ -138,6 +147,8 @@ func load_settings() -> Dictionary:
         for rating in ["too_easy", "fair", "too_hard"]:
             var key: String = "ai_feedback_%s_%s" % [difficulty, rating]
             result[key] = int(config.get_value("playtest", key, defaults[key]))
+            var team_key: String = "team_feedback_%s_%s" % [difficulty, rating]
+            result[team_key] = int(config.get_value("playtest", team_key, defaults[team_key]))
     return result
 
 
@@ -155,6 +166,8 @@ func save_settings(settings: Dictionary) -> bool:
         for rating in ["too_easy", "fair", "too_hard"]:
             var key: String = "ai_feedback_%s_%s" % [difficulty, rating]
             config.set_value("playtest", key, int(settings.get(key, 0)))
+            var team_key: String = "team_feedback_%s_%s" % [difficulty, rating]
+            config.set_value("playtest", team_key, int(settings.get(team_key, 0)))
     return config.save(SETTINGS_PATH) == OK
 
 

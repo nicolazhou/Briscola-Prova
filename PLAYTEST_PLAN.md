@@ -18,3 +18,16 @@ Per ogni sessione registra anche: risultato, difficoltà, momento in cui una mos
 ## Go/no-go AI
 
 Per una difficoltà destinata alla 1.0, la maggioranza dei tester del target dovrebbe scegliere `Giusta`; nessun comportamento ripetibile deve sembrare un bug o uso di informazioni nascoste. Se `Difficile` risulta semplicemente frustrante, va ritoccata prima del rilascio invece di aumentare ulteriormente la forza.
+
+
+## Sessione specifica 4P Beta 2
+
+Durante i playtest annotare separatamente:
+
+- se è immediatamente chiaro chi apre la prima presa quando non è l'utente;
+- se il badge `DI MANO` è sufficiente a seguire l'ordine;
+- se il messaggio `MAZZO ESAURITO · ULTIME 3 PRESE` chiarisce il cambio di fase;
+- se il compagno sembra collaborare (caricare punti, evitare sprechi) oppure appare casuale;
+- almeno 5 partite con ciascun possibile posto iniziale prima di promuovere la modalità fuori dalla Beta.
+
+Il risultato 4P ora raccoglie anche un voto rapido sulla difficoltà dell’AI di squadra; usare questi dati separatamente dai feedback 1v1.

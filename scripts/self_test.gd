@@ -12,6 +12,8 @@ func _initialize() -> void:
     _test_ai_memory_contract()
     _test_draw_contract()
     _test_four_player_mode(300)
+    _test_four_player_starting_players()
+    _test_four_player_team_ai_decisions()
     _test_four_player_hard_ai_legality()
     _test_complete_random_games(300)
     _test_games_against_ai(100)
@@ -207,7 +209,10 @@ func _test_four_player_mode(count: int) -> void:
 
     for game_index in range(count):
         var engine4 := FourPlayerEngine.new()
-        engine4.new_game("human")
+        var start_player: String = str(FourPlayerEngine.PLAYERS[game_index % FourPlayerEngine.PLAYERS.size()])
+        engine4.new_game(start_player)
+        assert(engine4.starting_player == start_player)
+        assert(engine4.current_player == start_player)
         var guard: int = 0
         while not engine4.is_game_over():
             guard += 1
@@ -229,6 +234,47 @@ func _test_four_player_mode(count: int) -> void:
         for player in FourPlayerEngine.PLAYERS:
             var final_hand: Array = engine4.hands[player]
             assert(final_hand.is_empty())
+
+
+func _test_four_player_starting_players() -> void:
+    for start_value in FourPlayerEngine.PLAYERS:
+        var start_player: String = str(start_value)
+        var engine4 := FourPlayerEngine.new()
+        engine4.new_game(start_player)
+        assert(engine4.starting_player == start_player)
+        assert(engine4.current_player == start_player)
+        assert(engine4.order_from(start_player)[0] == start_player)
+        var serialized: Variant = JSON.parse_string(JSON.stringify(engine4.to_dict()))
+        assert(typeof(serialized) == TYPE_DICTIONARY)
+        var restored := FourPlayerEngine.new()
+        assert(restored.load_from_dict(serialized))
+        assert(restored.starting_player == start_player)
+        assert(restored.current_player == start_player)
+
+
+func _test_four_player_team_ai_decisions() -> void:
+    # Luca e Sara sono compagni. Sara gioca per ultima mentre Luca sta già
+    # vincendo: la hard AI deve caricare l'Asso non di briscola sulla presa.
+    var engine4 := FourPlayerEngine.new()
+    engine4.trump_suit = "bastoni"
+    engine4.current_player = "left"
+    engine4.table = [
+        {"player": "human", "card": {"suit": "coppe", "rank": 4}},
+        {"player": "right", "card": {"suit": "coppe", "rank": 1}},
+        {"player": "partner", "card": {"suit": "spade", "rank": 5}},
+    ]
+    engine4.hands = {
+        "human": [],
+        "right": [],
+        "partner": [],
+        "left": [
+            {"suit": "denari", "rank": 1},
+            {"suit": "spade", "rank": 2},
+            {"suit": "bastoni", "rank": 2},
+        ],
+    }
+    var chosen: int = engine4.choose_bot_card("left", "hard")
+    assert(chosen == 0)
 
 
 func _test_four_player_hard_ai_legality() -> void:

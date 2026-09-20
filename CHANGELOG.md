@@ -1,18 +1,24 @@
 # Changelog
 
-## 0.8.1-rc5
+## 0.8.3-rc7
 
-- Briscola 4 giocatori: distribuzione iniziale animata a quattro lati.
-- Giocate animate dalla mano reale al centro del tavolo.
-- Raccolta della presa verso mazzetti NOI/LORO visibili.
-- Indicatore DI MANO e highlight del giocatore corrente.
-- Marco marcato esplicitamente come COMPAGNO.
-- Pescata a quattro animata, inclusa la briscola finale.
-- AI Difficile a squadre: conserva risorse, collabora col compagno e usa solo informazione osservabile.
-- 300 simulazioni automatiche 4P più test di legalità dell'AI hard.
-- Il single-player 1v1 resta ramo production/stable invariato.
+- CI/browser QA accelerato: test completi solo su Chromium, smoke boot paralleli sugli altri profili.
+- Modalità QA 1v1 ora pilota direttamente il motore e la persistenza, senza animazioni.
+- Playwright passa da 1 a 3 worker e non ritenta automaticamente test lenti.
+- Timeout QA ridotti e diagnostica di boot più chiara.
 
-# Changelog
+## 0.8.2-rc6
+
+- Il giocatore di mano iniziale della modalità 4P varia tra i quattro posti ed è salvato nello stato.
+- La distribuzione iniziale segue il vero ordine di mano della partita.
+- Se apre un bot, il tavolo prosegue automaticamente fino al turno umano senza input artificiale.
+- Finale 4P più leggibile: dopo l'ultima pescata il mazzo si ritira e compare `MAZZO ESAURITO · ULTIME 3 PRESE`.
+- Hard AI di coppia migliorata: carica punti quando il compagno ha una presa certa, usa il vincente meno costoso da ultima posizione e riconosce aperture non superabili nel finale usando solo informazione osservabile.
+- Simulazioni 4P distribuite sui quattro possibili giocatori di mano.
+- Test su roundtrip del giocatore iniziale e decisione cooperativa dell'AI.
+- QA browser 4P avvia intenzionalmente la partita da un bot.
+- Feedback post-partita dedicato all’AI di squadra (`Troppo facile / Giusta / Troppo difficile`) con `mode=teams_4p` nel payload opzionale.
+- Restano i miglioramenti RC5: deal a quattro lati, pile NOI/LORO, badge DI MANO, pescata animata, PWA safe-update.
 
 ## 0.7.0-rc3
 

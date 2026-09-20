@@ -30,6 +30,8 @@ var deck_layer: Control
 var result_overlay: Control
 var result_title: Label
 var result_detail: Label
+var result_feedback_row: HBoxContainer
+var result_feedback_status: Label
 var start_overlay: Control
 var continue_button: Button
 var difficulty_option: OptionButton
@@ -46,6 +48,7 @@ var their_pile_label: Label
 var _trump_revealed := true
 var _visible_hand_counts: Dictionary = {}
 var _last_indicated_player := ""
+var _endgame_announced := false
 
 var card_size := Vector2(92, 148)
 var back_size := Vector2(62, 100)
@@ -327,7 +330,7 @@ func _build_result_overlay() -> void:
     result_overlay.add_child(center)
 
     var panel := PanelContainer.new()
-    panel.custom_minimum_size = Vector2(430, 330)
+    panel.custom_minimum_size = Vector2(400, 470)
     var style := StyleBoxFlat.new()
     style.bg_color = Color(0.025, 0.095, 0.075, 0.98)
     style.corner_radius_top_left = 24
@@ -360,6 +363,31 @@ func _build_result_overlay() -> void:
     result_detail.add_theme_color_override("font_color", Color("#c8d7d0"))
     column.add_child(result_detail)
 
+    var feedback_title := Label.new()
+    feedback_title.text = "Com'è stata l'AI di squadra?"
+    feedback_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    feedback_title.add_theme_font_size_override("font_size", 13)
+    feedback_title.add_theme_color_override("font_color", Color("#d7c78d"))
+    column.add_child(feedback_title)
+
+    result_feedback_row = HBoxContainer.new()
+    result_feedback_row.alignment = BoxContainer.ALIGNMENT_CENTER
+    result_feedback_row.add_theme_constant_override("separation", 7)
+    for spec in [["Troppo facile", "too_easy"], ["Giusta", "fair"], ["Troppo difficile", "too_hard"]]:
+        var feedback_button := Button.new()
+        feedback_button.text = str(spec[0])
+        feedback_button.custom_minimum_size = Vector2(105, 38)
+        _style_button(feedback_button, false)
+        feedback_button.pressed.connect(_record_team_feedback.bind(str(spec[1])))
+        result_feedback_row.add_child(feedback_button)
+    column.add_child(result_feedback_row)
+
+    result_feedback_status = Label.new()
+    result_feedback_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    result_feedback_status.add_theme_font_size_override("font_size", 11)
+    result_feedback_status.add_theme_color_override("font_color", Color("#a8bdb4"))
+    column.add_child(result_feedback_status)
+
     var replay := Button.new()
     replay.text = "RIVINCITA"
     replay.custom_minimum_size = Vector2(250, 50)
@@ -384,14 +412,17 @@ func _show_start_overlay() -> void:
 func _new_game() -> void:
     difficulty = _difficulty_from_index(difficulty_option.selected)
     persistence.clear_mode_game(MODE)
-    engine.new_game("human")
+    var first_player: String = _random_start_player()
+    engine.new_game(first_player)
     busy = true
+    _endgame_announced = false
     start_overlay.visible = false
     result_overlay.visible = false
     _trump_revealed = false
     _visible_hand_counts = {"human": 0, "partner": 0, "left": 0, "right": 0}
     _play_sfx(SFX_SHUFFLE)
     _refresh_all()
+    status_label.text = "Distribuzione · apre %s" % _player_name(first_player)
     await get_tree().process_frame
     await _animate_initial_deal()
     _trump_revealed = true
@@ -400,8 +431,12 @@ func _new_game() -> void:
     busy = false
     _refresh_all()
     _save_progress()
-    status_label.text = "Tocca a te · apri la prima presa"
-    _set_human_interaction(true)
+    if engine.current_player == "human":
+        status_label.text = "Tocca a te · apri la prima presa"
+        _set_human_interaction(true)
+    else:
+        status_label.text = "%s apre la prima presa" % _player_name(engine.current_player)
+        await _advance_until_human()
 
 
 func _resume_game() -> void:
@@ -419,6 +454,7 @@ func _resume_game() -> void:
     start_overlay.visible = false
     result_overlay.visible = false
     busy = false
+    _endgame_announced = engine.deck.is_empty() and not engine.is_game_over()
     _refresh_all()
     if engine.is_game_over():
         _show_result()
@@ -508,6 +544,7 @@ func _finish_trick() -> void:
     _pulse_score()
     _refresh_turn_indicators()
     await _animate_draw_sequence(result.get("draws", []), before_counts)
+    await _announce_endgame_if_needed()
     _visible_hand_counts.clear()
     _refresh_all()
     _save_progress()
@@ -516,6 +553,12 @@ func _finish_trick() -> void:
 func _show_result() -> void:
     persistence.clear_mode_game(MODE)
     _set_human_interaction(false)
+    if result_feedback_status != null:
+        result_feedback_status.text = ""
+    if result_feedback_row != null:
+        for child in result_feedback_row.get_children():
+            if child is Button:
+                (child as Button).disabled = false
     result_overlay.visible = true
     var ours: int = int(engine.scores[FourPlayerEngine.TEAM_US])
     var theirs: int = int(engine.scores[FourPlayerEngine.TEAM_THEM])
@@ -838,9 +881,33 @@ func _capture_global_center(team: String) -> Vector2:
     return pile.global_position + Vector2(28, 34)
 
 
+func _random_start_player() -> String:
+    return str(FourPlayerEngine.PLAYERS[randi_range(0, FourPlayerEngine.PLAYERS.size() - 1)])
+
+
+func _announce_endgame_if_needed() -> void:
+    if _endgame_announced or not engine.deck.is_empty() or engine.is_game_over():
+        return
+    _endgame_announced = true
+    status_label.text = "MAZZO ESAURITO · ULTIME 3 PRESE"
+    _set_human_interaction(false)
+    if deck_layer != null and deck_layer.get_child_count() > 0:
+        deck_layer.pivot_offset = deck_layer.size * 0.5
+        var tween := create_tween()
+        tween.set_parallel(true)
+        tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+        tween.tween_property(deck_layer, "modulate:a", 0.0, 0.28)
+        tween.tween_property(deck_layer, "scale", Vector2(0.86, 0.86), 0.28)
+        await tween.finished
+    _refresh_deck()
+    deck_layer.modulate = Color.WHITE
+    deck_layer.scale = Vector2.ONE
+    await get_tree().create_timer(0.42).timeout
+
+
 func _animate_initial_deal() -> void:
     status_label.text = "Distribuzione…"
-    var order: Array = engine.order_from("human")
+    var order: Array = engine.order_from(engine.starting_player)
     for round_index in range(3):
         for player_value in order:
             var player: String = str(player_value)
@@ -977,7 +1044,7 @@ func _run_web_qa_4p() -> void:
     result_overlay.visible = false
     difficulty = "hard"
     persistence.clear_mode_game(MODE)
-    engine.new_game("human")
+    engine.new_game("left")
     busy = true
     _trump_revealed = true
     _visible_hand_counts.clear()
@@ -1010,6 +1077,22 @@ func _run_web_qa_4p() -> void:
     else:
         _set_web_qa_status("4p-failed-timeout")
 
+
+
+func _record_team_feedback(rating: String) -> void:
+    if rating not in ["too_easy", "fair", "too_hard"]:
+        return
+    var key: String = "team_feedback_%s_%s" % [difficulty, rating]
+    settings[key] = int(settings.get(key, 0)) + 1
+    persistence.save_settings(settings)
+    if OS.has_feature("web"):
+        JavaScriptBridge.eval("window.BriscolaSupport && window.BriscolaSupport.recordPlaytest(%s, %s, %d, %d, %s);" % [JSON.stringify(difficulty), JSON.stringify(rating), int(engine.scores[FourPlayerEngine.TEAM_US]), int(engine.scores[FourPlayerEngine.TEAM_THEM]), JSON.stringify(MODE)], true)
+    if result_feedback_status != null:
+        result_feedback_status.text = "Grazie · feedback squadra salvato"
+    if result_feedback_row != null:
+        for child in result_feedback_row.get_children():
+            if child is Button:
+                (child as Button).disabled = true
 
 
 func _back_to_main() -> void:

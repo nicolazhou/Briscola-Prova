@@ -1,27 +1,33 @@
 const { test, expect } = require('@playwright/test');
 
-async function waitForQaStatus(page, wanted, timeout = 100000) {
-  await page.waitForFunction(
-    (expected) => window.__briscolaQaStatus === expected,
+async function waitForQaStatus(page, wanted, timeout = 15000) {
+  const status = await page.waitForFunction(
+    (expected) => {
+      const value = window.__briscolaQaStatus || '';
+      return value === expected || value.startsWith('failed-') ? value : false;
+    },
     wanted,
     { timeout }
   );
+  const value = await status.jsonValue();
+  expect(value).toBe(wanted);
 }
 
-test('loads Godot, persists a game, reloads and completes it', async ({ page }) => {
+test('persists, reloads and completes the classic game', async ({ page }) => {
   const pageErrors = [];
   page.on('pageerror', error => pageErrors.push(String(error)));
 
   await page.goto('/?qa=fresh', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('canvas')).toBeVisible();
-  await page.waitForFunction(() => window.__briscolaAppReady === true, null, { timeout: 30000 });
+  await page.waitForFunction(() => window.__briscolaAppReady === true, null, { timeout: 20000 });
   await waitForQaStatus(page, 'saved');
 
-  // Reload the same origin/context: this exercises Godot's persistent Web
-  // filesystem rather than an in-memory test double.
+  // Give Emscripten/IndexedDB a small deterministic window after force_fs_sync.
+  await page.waitForTimeout(250);
+
   await page.goto('/?qa=resume', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('canvas')).toBeVisible();
-  await page.waitForFunction(() => window.__briscolaAppReady === true, null, { timeout: 30000 });
+  await page.waitForFunction(() => window.__briscolaAppReady === true, null, { timeout: 20000 });
   await waitForQaStatus(page, 'complete');
 
   const diagnostics = await page.evaluate(() => (window.BriscolaSupport && window.BriscolaSupport.getDiagnostics()) || []);
@@ -30,13 +36,13 @@ test('loads Godot, persists a game, reloads and completes it', async ({ page }) 
   expect(fatalDiagnostics, JSON.stringify(fatalDiagnostics, null, 2)).toEqual([]);
 });
 
-
-test('four-player teams beta boots and completes a QA match', async ({ page }) => {
+test('four-player teams QA match completes', async ({ page }) => {
   const pageErrors = [];
   page.on('pageerror', error => pageErrors.push(String(error)));
+
   await page.goto('/?qa=4p', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('canvas')).toBeVisible();
-  await page.waitForFunction(() => window.__briscolaAppReady === true, null, { timeout: 30000 });
-  await page.waitForFunction(() => window.__briscolaQaStatus === '4p-complete', null, { timeout: 60000 });
+  await page.waitForFunction(() => window.__briscolaAppReady === true, null, { timeout: 20000 });
+  await waitForQaStatus(page, '4p-complete', 15000);
   expect(pageErrors, pageErrors.join('\n')).toEqual([]);
 });

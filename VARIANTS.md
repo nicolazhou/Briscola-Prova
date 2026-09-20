@@ -12,7 +12,7 @@ Il catalogo vive in `scripts/game_modes.gd`.
 - 20 prese, 120 punti.
 - save/resume, AI facile/normale/difficile, QA browser e monitoring.
 
-### `teams_4p` — beta giocabile
+### `teams_4p` — Beta 2 giocabile
 
 - Tu + Marco contro Sara + Luca.
 - Le coppie sono opposte al tavolo.
@@ -48,3 +48,14 @@ Candidate non ancora abilitate:
 ## 0.8.1: stato Beta 4P
 
 La modalità a squadre è ora completa come loop di gioco e ha animazioni dedicate. Prima di promuoverla a production restano QA su device reali, tuning dell'AI di coppia e playtest con almeno 20 partite umane a quattro/bot. La modalità non condivide il save con il 1v1.
+
+
+## 0.8.2: mano variabile, finale e AI di coppia
+
+- La prima mano può appartenere a `human`, `right`, `partner` o `left`; non esiste più un vantaggio fisso dell'utente.
+- `starting_player` è parte dello stato serializzato e sopravvive al resume.
+- Il deal parte dal giocatore di mano e mantiene l'ordine circolare del tavolo.
+- Dopo l'esaurimento del mazzo restano esattamente tre prese senza pesca, segnalate chiaramente nella UI.
+- La hard AI sfrutta l'ultima posizione per caricare punti sulla presa certa del compagno e usa una stima conservativa delle carte non viste nelle aperture di fine partita.
+
+La modalità resta **Beta** fino a QA su device fisici e playtest umani di coppia; i nuovi test automatici sono un gate tecnico, non una sostituzione del playtest.

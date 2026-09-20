@@ -18,6 +18,7 @@ var captured := {TEAM_US: [], TEAM_THEM: []}
 var scores := {TEAM_US: 0, TEAM_THEM: 0}
 var trick_wins := {TEAM_US: 0, TEAM_THEM: 0}
 var current_player := "human"
+var starting_player := "human"
 var trump_card: Dictionary = {}
 var trump_suit := ""
 var trick_number := 1
@@ -25,6 +26,8 @@ var played_history: Array = []
 
 
 func new_game(start_player: String = "human") -> void:
+    var valid_start: String = start_player if start_player in PLAYERS else "human"
+    starting_player = valid_start
     deck = []
     for suit in BriscolaEngine.SUITS:
         for rank in BriscolaEngine.RANKS:
@@ -41,7 +44,7 @@ func new_game(start_player: String = "human") -> void:
     played_history = []
     trick_number = 1
 
-    var deal_order: Array = order_from(start_player)
+    var deal_order: Array = order_from(valid_start)
     for _round in range(3):
         for player in deal_order:
             hands[player].append(deck.pop_back())
@@ -49,7 +52,7 @@ func new_game(start_player: String = "human") -> void:
     trump_card = deck.pop_back()
     trump_suit = str(trump_card["suit"])
     deck.push_front(trump_card)
-    current_player = start_player if start_player in PLAYERS else "human"
+    current_player = valid_start
 
 
 func play_card(player: String, hand_index: int) -> Dictionary:
@@ -163,10 +166,12 @@ func choose_bot_card(player: String, difficulty: String = "normal") -> int:
 
 
 func _choose_hard_team_card(player: String, hand: Array) -> int:
-    # Strategia di squadra senza leggere le mani nascoste o l'ordine del mazzo.
-    # Usa solo tavolo, mano propria e carte già uscite.
+    # Strategia di squadra senza leggere mani nascoste o ordine del mazzo.
+    # Usa soltanto tavolo, mano propria, carte già uscite e insieme delle carte
+    # ancora non viste. In ultima posizione può ragionare in modo esatto sulla
+    # presa corrente; nelle altre posizioni resta volutamente conservativa.
     if table.is_empty():
-        return _hard_lead_index(hand)
+        return _hard_lead_index(player, hand)
 
     var current_winner: String = current_table_winner()
     var partner_winning: bool = team_for(current_winner) == team_for(player)
@@ -180,10 +185,18 @@ func _choose_hard_team_card(player: String, hand: Array) -> int:
 
     var trick_points_now: int = table_points()
     var late_game: bool = deck.is_empty()
+    var last_to_play: bool = table.size() == 3
 
     if partner_winning:
-        # Se la presa appare al sicuro, passa punti al compagno evitando di
-        # bruciare una briscola importante. È una scelta tipicamente "di coppia".
+        # Se giochiamo per ultimi, la presa del compagno è già certa: carichiamo
+        # il maggior numero di punti possibile senza buttare inutilmente una
+        # briscola forte. Questo rende il gioco di coppia molto più leggibile.
+        if last_to_play:
+            var certain_dump: int = _highest_safe_point_index(hand)
+            if certain_dump >= 0:
+                return certain_dump
+        # Prima dell'ultima posizione carichiamo solo se nessuna carta non vista
+        # può realisticamente superare l'attuale vincitore della nostra squadra.
         if _current_team_win_looks_secure(player):
             var dump_index: int = _highest_safe_point_index(hand)
             if dump_index >= 0:
@@ -192,8 +205,13 @@ func _choose_hard_team_card(player: String, hand: Array) -> int:
             return _lowest_cost_from_indices(hand, losing, true)
         return _lowest_cost_from_indices(hand, winning, true) if not winning.is_empty() else 0
 
-    # Se stanno vincendo gli avversari, recupera la presa quando contiene punti
-    # o nel finale; altrimenti conserva le risorse migliori.
+    # Gli avversari stanno prendendo. In ultima posizione sappiamo esattamente
+    # se possiamo ribaltare la presa, quindi usiamo la carta vincente meno cara.
+    if last_to_play and not winning.is_empty():
+        return _lowest_cost_from_indices(hand, winning, true)
+
+    # Nelle altre posizioni recuperiamo soprattutto prese già ricche di punti o
+    # nel finale senza pesca; altrimenti preserviamo assi, tre e briscole.
     if not winning.is_empty() and (trick_points_now >= 3 or late_game):
         return _lowest_cost_from_indices(hand, winning, true)
     if not losing.is_empty():
@@ -203,9 +221,29 @@ func _choose_hard_team_card(player: String, hand: Array) -> int:
     return 0
 
 
-func _hard_lead_index(hand: Array) -> int:
-    # In apertura conserva assi/tre e briscole. Nel finale senza mazzo la forza
-    # conta di più, ma resta preferibile scaricare una carta economica.
+func _hard_lead_index(player: String, hand: Array) -> int:
+    # Se esiste una carta che, rispetto a tutte le carte non viste, non può
+    # essere superata, sfruttiamo prima quella con più punti. È particolarmente
+    # utile nelle ultime tre prese, quando non si pesca più.
+    var guaranteed: Array = []
+    for i in range(hand.size()):
+        var card: Dictionary = hand[i]
+        if _lead_card_is_guaranteed(card, player):
+            guaranteed.append(i)
+    if not guaranteed.is_empty():
+        var best_guaranteed: int = int(guaranteed[0])
+        var best_value: int = -1
+        for value in guaranteed:
+            var index: int = int(value)
+            var candidate: Dictionary = hand[index]
+            var score: int = points_for(candidate) * 100 + strength_for(candidate)
+            if score > best_value:
+                best_value = score
+                best_guaranteed = index
+        return best_guaranteed
+
+    # In assenza di una presa garantita, conserva assi/tre e soprattutto le
+    # briscole. Nel finale la forza della carta pesa un po' di più.
     var best: int = 0
     var best_cost: int = 1000000
     for i in range(hand.size()):
@@ -217,6 +255,23 @@ func _hard_lead_index(hand: Array) -> int:
             best = i
             best_cost = cost
     return best
+
+
+func _lead_card_is_guaranteed(card: Dictionary, player: String) -> bool:
+    var suit: String = str(card["suit"])
+    var strength: int = strength_for(card)
+    for value in _unseen_cards_for_ai(player):
+        var unseen: Dictionary = value
+        var unseen_suit: String = str(unseen["suit"])
+        if suit == trump_suit:
+            if unseen_suit == trump_suit and strength_for(unseen) > strength:
+                return false
+        else:
+            if unseen_suit == trump_suit:
+                return false
+            if unseen_suit == suit and strength_for(unseen) > strength:
+                return false
+    return true
 
 
 func _highest_safe_point_index(hand: Array) -> int:
@@ -456,6 +511,7 @@ func to_dict() -> Dictionary:
         "scores": scores.duplicate(true),
         "trick_wins": trick_wins.duplicate(true),
         "current_player": current_player,
+        "starting_player": starting_player,
         "trump_card": trump_card.duplicate(true),
         "trump_suit": trump_suit,
         "trick_number": trick_number,
@@ -490,6 +546,7 @@ func load_from_dict(state: Dictionary) -> bool:
     var loaded_wins: Dictionary = state.get("trick_wins", {})
     trick_wins = {TEAM_US: int(loaded_wins.get(TEAM_US, 0)), TEAM_THEM: int(loaded_wins.get(TEAM_THEM, 0))}
     current_player = str(state["current_player"])
+    starting_player = str(state.get("starting_player", current_player))
     trump_card = _normalize_card(state["trump_card"])
     trump_suit = str(state["trump_suit"])
     trick_number = int(state["trick_number"])
@@ -535,7 +592,7 @@ func _normalize_table(value: Variant) -> Array:
 
 
 func _validate_state() -> bool:
-    if current_player not in PLAYERS or trump_suit not in BriscolaEngine.SUITS:
+    if current_player not in PLAYERS or starting_player not in PLAYERS or trump_suit not in BriscolaEngine.SUITS:
         return false
     if trump_card.is_empty() or str(trump_card.get("suit", "")) != trump_suit:
         return false
