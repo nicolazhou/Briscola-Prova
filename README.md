@@ -87,3 +87,11 @@ This package uses `lihop/setup-godot@v3` with `export-templates: true` so the Gi
 ## CI validation
 
 The GitHub Actions workflow validates GDScript imports, runs `scripts/self_test.gd`, and only then exports the Web build. This makes script/type errors visible before the export step.
+
+## GitHub Pages CI note (v3)
+
+The workflow installs Godot 4.3 and the matching official export templates explicitly into:
+
+`~/.local/share/godot/export_templates/4.3.stable/`
+
+It verifies `web_release.zip` and `web_debug.zip` before attempting the Web export, so a template problem fails with a precise error instead of Godot's generic `configuration errors` message.

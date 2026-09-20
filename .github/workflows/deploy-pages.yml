@@ -14,6 +14,11 @@ concurrency:
   group: "pages"
   cancel-in-progress: true
 
+env:
+  GODOT_VERSION: "4.3"
+  GODOT_RELEASE: "4.3-stable"
+  GODOT_TEMPLATE_VERSION: "4.3.stable"
+
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -22,17 +27,39 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Godot and export templates
-        uses: lihop/setup-godot@v3
-        with:
-          version: 4.3-stable
-          export-templates: true
-
-      - name: Show Godot setup
+      - name: Install Godot 4.3
+        shell: bash
         run: |
+          set -euxo pipefail
+          curl -fL --retry 3 \
+            -o /tmp/godot.zip \
+            "https://github.com/godotengine/godot-builds/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_RELEASE}_linux.x86_64.zip"
+          unzip -q /tmp/godot.zip -d /tmp/godot
+          GODOT_BIN="$(find /tmp/godot -maxdepth 1 -type f -name 'Godot_v*_linux.x86_64' | head -n 1)"
+          test -n "$GODOT_BIN"
+          chmod +x "$GODOT_BIN"
+          sudo install -m 0755 "$GODOT_BIN" /usr/local/bin/godot
           godot --version
-          echo "HOME=$HOME"
-          find "$HOME/.local/share/godot/export_templates" -maxdepth 2 -type f -print | head -30 || true
+
+      - name: Install official Godot export templates
+        shell: bash
+        run: |
+          set -euxo pipefail
+          curl -fL --retry 3 \
+            -o /tmp/export_templates.tpz \
+            "https://github.com/godotengine/godot-builds/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_RELEASE}_export_templates.tpz"
+          rm -rf /tmp/godot-templates
+          mkdir -p /tmp/godot-templates
+          unzip -q /tmp/export_templates.tpz -d /tmp/godot-templates
+
+          TEMPLATE_DIR="$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATE_VERSION}"
+          mkdir -p "$TEMPLATE_DIR"
+          cp -a /tmp/godot-templates/templates/. "$TEMPLATE_DIR/"
+
+          echo "Installed templates in: $TEMPLATE_DIR"
+          ls -lah "$TEMPLATE_DIR"
+          test -f "$TEMPLATE_DIR/web_release.zip"
+          test -f "$TEMPLATE_DIR/web_debug.zip"
 
       - name: Import assets and validate scripts
         run: godot --headless --editor --path . --quit
@@ -41,10 +68,14 @@ jobs:
         run: godot --headless --path . -s res://scripts/self_test.gd
 
       - name: Export Web build
+        shell: bash
         run: |
+          set -euxo pipefail
           mkdir -p build/web
           godot --headless --verbose --path . --export-release "Web" build/web/index.html
           test -f build/web/index.html
+          echo "Web export generated:"
+          find build/web -maxdepth 1 -type f -printf '%f\n' | sort
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
