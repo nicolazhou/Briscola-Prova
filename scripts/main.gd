@@ -338,7 +338,7 @@ func _on_player_card_pressed(index: int) -> void:
     if busy or engine.current_player != "human":
         return
 
-    var card := engine.play_card("human", index)
+    var card: Dictionary = engine.play_card("human", index)
     if card.is_empty():
         return
 
@@ -363,12 +363,12 @@ func _cpu_turn() -> void:
     _set_status("Tony sta scegliendo...")
     await get_tree().create_timer(0.52).timeout
 
-    var index := engine.choose_cpu_card()
+    var index: int = engine.choose_cpu_card()
     if index < 0:
         busy = false
         return
 
-    var card := engine.play_card("cpu", index)
+    var card: Dictionary = engine.play_card("cpu", index)
     _refresh_all()
     _set_status("Tony gioca %s." % engine.card_name(card))
     await get_tree().create_timer(0.42).timeout
@@ -384,13 +384,13 @@ func _cpu_turn() -> void:
 func _finish_trick() -> void:
     # Lascia le due carte sul tavolo per un momento prima di assegnare la presa.
     await get_tree().create_timer(0.62).timeout
-    var result := engine.resolve_trick()
+    var result: Dictionary = engine.resolve_trick()
     if result.is_empty():
         busy = false
         return
 
     _refresh_all()
-    var winner_name := "Tu" if result["winner"] == "human" else "Tony"
+    var winner_name: String = "Tu" if result["winner"] == "human" else "Tony"
     _set_status("%s prende la mano (+%d punti)." % [winner_name, result["points"]])
     await get_tree().create_timer(0.62).timeout
 

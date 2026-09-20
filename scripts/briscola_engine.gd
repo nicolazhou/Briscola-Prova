@@ -109,18 +109,18 @@ func resolve_trick() -> Dictionary:
 
     var first: Dictionary = table[0]
     var second: Dictionary = table[1]
-    var winner := first["player"]
+    var winner: String = str(first["player"])
 
     if second_card_wins(first["card"], second["card"], trump_suit):
-        winner = second["player"]
+        winner = str(second["player"])
 
-    var trick_points := points_for(first["card"]) + points_for(second["card"])
+    var trick_points: int = points_for(first["card"]) + points_for(second["card"])
     scores[winner] += trick_points
     captured[winner].append(first["card"])
     captured[winner].append(second["card"])
 
     # Il vincitore pesca per primo e apre la presa successiva.
-    var loser := other_player(winner)
+    var loser: String = other_player(winner)
     for player in [winner, loser]:
         if not deck.is_empty():
             hands[player].append(deck.pop_back())
@@ -128,7 +128,7 @@ func resolve_trick() -> Dictionary:
     current_player = winner
     table.clear()
 
-    var result := {
+    var result: Dictionary = {
         "winner": winner,
         "points": trick_points,
         "trick": trick_number,
@@ -152,19 +152,19 @@ func choose_cpu_card() -> int:
 
         if not winning_indices.is_empty():
             var best_index: int = winning_indices[0]
-            var best_cost := cpu_card_cost(hand[best_index])
+            var best_cost: int = cpu_card_cost(hand[best_index])
             for index in winning_indices:
-                var cost := cpu_card_cost(hand[index])
+                var cost: int = cpu_card_cost(hand[index])
                 if cost < best_cost:
                     best_cost = cost
                     best_index = index
             return best_index
 
     # Altrimenti conserva assi, tre e briscole importanti quando possibile.
-    var selected := 0
-    var selected_cost := cpu_card_cost(hand[0])
+    var selected: int = 0
+    var selected_cost: int = cpu_card_cost(hand[0])
     for i in range(1, hand.size()):
-        var cost := cpu_card_cost(hand[i])
+        var cost: int = cpu_card_cost(hand[i])
         if cost < selected_cost:
             selected = i
             selected_cost = cost
@@ -172,7 +172,7 @@ func choose_cpu_card() -> int:
 
 
 func cpu_card_cost(card: Dictionary) -> int:
-    var cost := points_for(card) * 100 + strength_for(card)
+    var cost: int = points_for(card) * 100 + strength_for(card)
     if card["suit"] == trump_suit:
         cost += 20
     return cost

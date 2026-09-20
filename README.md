@@ -82,3 +82,8 @@ Il workflow usa `barichello/godot-ci:4.3`, una versione compatibile con questo p
 ## CI note
 
 This package uses `lihop/setup-godot@v3` with `export-templates: true` so the GitHub runner installs the exact Godot 4.3 editor and matching export templates. This avoids depending on Docker HOME/template path relocation.
+
+
+## CI validation
+
+The GitHub Actions workflow validates GDScript imports, runs `scripts/self_test.gd`, and only then exports the Web build. This makes script/type errors visible before the export step.

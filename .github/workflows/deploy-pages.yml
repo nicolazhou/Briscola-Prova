@@ -34,8 +34,11 @@ jobs:
           echo "HOME=$HOME"
           find "$HOME/.local/share/godot/export_templates" -maxdepth 2 -type f -print | head -30 || true
 
-      - name: Import assets
+      - name: Import assets and validate scripts
         run: godot --headless --editor --path . --quit
+
+      - name: Run Briscola engine self-test
+        run: godot --headless --path . -s res://scripts/self_test.gd
 
       - name: Export Web build
         run: |
