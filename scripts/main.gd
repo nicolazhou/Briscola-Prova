@@ -17,6 +17,25 @@ const SFX_SHUFFLE := "res://assets/audio/shuffle.wav"
 const SFX_WIN := "res://assets/audio/win.wav"
 const SFX_LOSE := "res://assets/audio/lose.wav"
 
+const TUTORIAL_STEPS: Array[Dictionary] = [
+    {
+        "title": "1 · Obiettivo",
+        "body": "Fai più punti di Tony. Nel mazzo ci sono 120 punti totali: con 61 o più vinci, 60 a 60 è pareggio.",
+    },
+    {
+        "title": "2 · Come si prende",
+        "body": "Se giochi lo stesso seme, vince la carta più forte. Se i semi sono diversi, prende chi ha giocato per primo, salvo che entri una briscola.",
+    },
+    {
+        "title": "3 · Valore delle carte",
+        "body": "Asso 11 · Tre 10 · Re 4 · Cavallo 3 · Fante 2. Le altre carte valgono 0 punti, ma possono comunque vincere una presa.",
+    },
+    {
+        "title": "4 · Ritmo della partita",
+        "body": "Chi prende gioca per primo nella presa successiva. Dopo ogni presa si pesca; la briscola scoperta è l’ultima carta del mazzo.",
+    },
+]
+
 var engine := BriscolaEngine.new()
 var persistence := GamePersistence.new()
 var settings: Dictionary = {}
@@ -27,6 +46,10 @@ var compact_layout := false
 var card_size := BASE_CARD_SIZE
 var small_card_size := BASE_SMALL_CARD_SIZE
 var table_card_size := BASE_TABLE_CARD_SIZE
+var _last_leader := ""
+var _assets_warmed := false
+var tutorial_step := 0
+var _start_game_after_tutorial := false
 
 var game_screen: Control
 var game_margin: MarginContainer
@@ -50,6 +73,8 @@ var player_caption: Label
 var footer: PanelContainer
 var footer_row: HBoxContainer
 var restart_button: Button
+var help_button: Button
+var restart_dialog: ConfirmationDialog
 
 var menu_overlay: Control
 var menu_panel: PanelContainer
@@ -58,7 +83,15 @@ var difficulty_option: OptionButton
 var sound_toggle: CheckButton
 var reduced_motion_toggle: CheckButton
 var continue_button: Button
+var pwa_update_button: Button
 var stats_label: Label
+var tutorial_overlay: Control
+var tutorial_panel: PanelContainer
+var tutorial_title: Label
+var tutorial_body: Label
+var tutorial_progress: Label
+var tutorial_back_button: Button
+var tutorial_next_button: Button
 var animation_layer: Control
 var sfx_player: AudioStreamPlayer
 
@@ -69,6 +102,11 @@ var cpu_slot: Control
 var human_slot: Control
 var cpu_taken_pile: Control
 var human_taken_pile: Control
+var table_deck_anchor: Control
+var table_turn_label: Label
+var table_phase_label: Label
+var cpu_lead_badge: Label
+var human_lead_badge: Label
 var human_capture_target: Control
 var cpu_capture_target: Control
 
@@ -86,15 +124,28 @@ var result_panel: PanelContainer
 var result_title: Label
 var result_score: Label
 var result_detail: Label
+var result_feedback_label: Label
+var result_feedback_row: HBoxContainer
+var result_feedback_status: Label
 
 
 func _ready() -> void:
     settings = persistence.load_settings()
     cpu_difficulty = str(settings.get("difficulty", "normal"))
+    _warm_runtime_assets()
     _build_interface()
     get_viewport().size_changed.connect(_on_viewport_size_changed)
     _apply_responsive_layout()
     _show_menu()
+    if OS.has_feature("web"):
+        JavaScriptBridge.eval("window.__briscolaAppReady = true;", true)
+        var pwa_timer := Timer.new()
+        pwa_timer.wait_time = 2.0
+        pwa_timer.autostart = true
+        pwa_timer.timeout.connect(_refresh_pwa_update_button)
+        add_child(pwa_timer)
+        call_deferred("_refresh_pwa_update_button")
+        call_deferred("_maybe_run_web_qa")
 
 
 func _notification(what: int) -> void:
@@ -158,6 +209,8 @@ func _build_interface() -> void:
 
     _build_menu_overlay()
     _build_result_overlay()
+    _build_tutorial_overlay()
+    _build_restart_dialog()
 
 
 func _build_game_screen() -> void:
@@ -185,6 +238,14 @@ func _build_game_screen() -> void:
     _style_button(menu_button, false)
     menu_button.pressed.connect(_on_menu_pressed)
     header.add_child(menu_button)
+
+    help_button = Button.new()
+    help_button.text = "?"
+    help_button.tooltip_text = "Come si gioca"
+    help_button.custom_minimum_size = Vector2(44, 42)
+    _style_button(help_button, false)
+    help_button.pressed.connect(_show_tutorial.bind(false))
+    header.add_child(help_button)
 
     title_block = VBoxContainer.new()
     title_block.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -254,44 +315,11 @@ func _build_game_screen() -> void:
     table_row.add_theme_constant_override("separation", 18)
     table_margin.add_child(table_row)
 
-    deck_panel = _panel(Color(0.02, 0.08, 0.065, 0.46), 18, Color(1, 1, 1, 0.06))
-    deck_panel.custom_minimum_size.x = 255
+    # I dati del mazzo non vivono più in un pannello laterale: il mazzo e la
+    # briscola vengono appoggiati direttamente sul feltro, come in una partita reale.
+    deck_panel = PanelContainer.new()
+    deck_panel.visible = false
     table_row.add_child(deck_panel)
-
-    var deck_margin := MarginContainer.new()
-    deck_margin.add_theme_constant_override("margin_left", 14)
-    deck_margin.add_theme_constant_override("margin_right", 14)
-    deck_margin.add_theme_constant_override("margin_top", 12)
-    deck_margin.add_theme_constant_override("margin_bottom", 12)
-    deck_panel.add_child(deck_margin)
-
-    var deck_column := VBoxContainer.new()
-    deck_column.alignment = BoxContainer.ALIGNMENT_CENTER
-    deck_column.add_theme_constant_override("separation", 7)
-    deck_margin.add_child(deck_column)
-
-    var deck_title := Label.new()
-    deck_title.text = "MAZZO"
-    deck_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    deck_title.add_theme_font_size_override("font_size", 13)
-    deck_title.add_theme_color_override("font_color", Color("#c9d8d2"))
-    deck_column.add_child(deck_title)
-
-    deck_box = HBoxContainer.new()
-    deck_box.alignment = BoxContainer.ALIGNMENT_CENTER
-    deck_box.add_theme_constant_override("separation", 8)
-    deck_column.add_child(deck_box)
-
-    trump_label = Label.new()
-    trump_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    trump_label.add_theme_font_size_override("font_size", 14)
-    deck_column.add_child(trump_label)
-
-    deck_label = Label.new()
-    deck_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    deck_label.add_theme_font_size_override("font_size", 12)
-    deck_label.add_theme_color_override("font_color", Color("#abc0b7"))
-    deck_column.add_child(deck_label)
 
     play_zone = VBoxContainer.new()
     play_zone.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -308,6 +336,44 @@ func _build_game_screen() -> void:
     trick_surface.mouse_filter = Control.MOUSE_FILTER_IGNORE
     play_zone.add_child(trick_surface)
     trick_surface.resized.connect(_layout_trick_slots)
+
+    table_deck_anchor = Control.new()
+    table_deck_anchor.name = "TableDeck"
+    table_deck_anchor.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    table_deck_anchor.z_index = 2
+    trick_surface.add_child(table_deck_anchor)
+
+    deck_box = HBoxContainer.new()
+    deck_box.alignment = BoxContainer.ALIGNMENT_CENTER
+    deck_box.add_theme_constant_override("separation", -34)
+    deck_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    table_deck_anchor.add_child(deck_box)
+
+    table_phase_label = Label.new()
+    table_phase_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    table_phase_label.add_theme_font_size_override("font_size", 12)
+    table_phase_label.add_theme_color_override("font_color", Color("#d8c98e"))
+    table_phase_label.add_theme_color_override("font_outline_color", Color(0.01, 0.03, 0.025, 0.9))
+    table_phase_label.add_theme_constant_override("outline_size", 4)
+    table_phase_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    table_deck_anchor.add_child(table_phase_label)
+
+    table_turn_label = Label.new()
+    table_turn_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    table_turn_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    table_turn_label.add_theme_font_size_override("font_size", 14)
+    table_turn_label.add_theme_color_override("font_color", Color("#f1e2ad"))
+    table_turn_label.add_theme_color_override("font_outline_color", Color(0.01, 0.03, 0.025, 0.92))
+    table_turn_label.add_theme_constant_override("outline_size", 5)
+    table_turn_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    table_turn_label.z_index = 12
+    trick_surface.add_child(table_turn_label)
+    turn_label = table_turn_label
+
+    cpu_lead_badge = _lead_badge()
+    trick_surface.add_child(cpu_lead_badge)
+    human_lead_badge = _lead_badge()
+    trick_surface.add_child(human_lead_badge)
 
     cpu_slot = _card_slot()
     cpu_slot.rotation = deg_to_rad(-4.0)
@@ -346,41 +412,11 @@ func _build_game_screen() -> void:
     trick_outcome_label.z_index = 20
     trick_surface.add_child(trick_outcome_label)
 
-    info_panel = _panel(Color(0.02, 0.08, 0.065, 0.46), 18, Color(1, 1, 1, 0.06))
-    info_panel.custom_minimum_size.x = 245
+    # Il vecchio pannello laterale del turno resta come nodo compatibile ma è
+    # volutamente nascosto: le informazioni essenziali sono ora sul tavolo.
+    info_panel = PanelContainer.new()
+    info_panel.visible = false
     table_row.add_child(info_panel)
-
-    var info_margin := MarginContainer.new()
-    info_margin.add_theme_constant_override("margin_left", 16)
-    info_margin.add_theme_constant_override("margin_right", 16)
-    info_margin.add_theme_constant_override("margin_top", 14)
-    info_margin.add_theme_constant_override("margin_bottom", 14)
-    info_panel.add_child(info_margin)
-
-    var info_column := VBoxContainer.new()
-    info_column.alignment = BoxContainer.ALIGNMENT_CENTER
-    info_column.add_theme_constant_override("separation", 12)
-    info_margin.add_child(info_column)
-
-    var info_title := Label.new()
-    info_title.text = "TURNO"
-    info_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    info_title.add_theme_font_size_override("font_size", 13)
-    info_title.add_theme_color_override("font_color", Color("#b9cbc4"))
-    info_column.add_child(info_title)
-
-    turn_label = Label.new()
-    turn_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    turn_label.add_theme_font_size_override("font_size", 23)
-    turn_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-    info_column.add_child(turn_label)
-
-    var hint := Label.new()
-    hint.text = "Asso 11 · Tre 10\nRe 4 · Cavallo 3 · Fante 2"
-    hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    hint.add_theme_font_size_override("font_size", 12)
-    hint.add_theme_color_override("font_color", Color("#9db4aa"))
-    info_column.add_child(hint)
 
     player_zone = VBoxContainer.new()
     player_zone.custom_minimum_size.y = 194
@@ -448,15 +484,23 @@ func _build_menu_overlay() -> void:
     menu_overlay.add_child(center)
 
     menu_panel = _panel(Color(0.025, 0.095, 0.075, 0.98), 28, Color(0.86, 0.73, 0.38, 0.28))
-    menu_panel.custom_minimum_size = Vector2(520, 590)
+    menu_panel.custom_minimum_size = Vector2(520, 690)
     center.add_child(menu_panel)
 
+    var menu_scroll := ScrollContainer.new()
+    menu_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+    menu_scroll.follow_focus = true
+    menu_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    menu_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    menu_panel.add_child(menu_scroll)
+
     menu_margin = MarginContainer.new()
+    menu_margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     menu_margin.add_theme_constant_override("margin_left", 42)
     menu_margin.add_theme_constant_override("margin_right", 42)
     menu_margin.add_theme_constant_override("margin_top", 30)
     menu_margin.add_theme_constant_override("margin_bottom", 28)
-    menu_panel.add_child(menu_margin)
+    menu_scroll.add_child(menu_margin)
     var margin := menu_margin
 
     var column := VBoxContainer.new()
@@ -464,8 +508,16 @@ func _build_menu_overlay() -> void:
     column.add_theme_constant_override("separation", 15)
     margin.add_child(column)
 
+    var brand_mark := TextureRect.new()
+    brand_mark.texture = load("res://icon.svg")
+    brand_mark.custom_minimum_size = Vector2(72, 72)
+    brand_mark.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+    brand_mark.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+    brand_mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    column.add_child(brand_mark)
+
     var eyebrow := Label.new()
-    eyebrow.text = "CLASSICO ITALIANO"
+    eyebrow.text = "CLASSICO ITALIANO · MAZZO NAPOLETANO"
     eyebrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     eyebrow.add_theme_font_size_override("font_size", 13)
     eyebrow.add_theme_color_override("font_color", Color("#d5bf7a"))
@@ -478,7 +530,7 @@ func _build_menu_overlay() -> void:
     column.add_child(title)
 
     var subtitle := Label.new()
-    subtitle.text = "Una partita veloce contro Tony"
+    subtitle.text = "1 contro 1 stabile · 4 giocatori a squadre Beta"
     subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     subtitle.add_theme_font_size_override("font_size", 16)
     subtitle.add_theme_color_override("font_color", Color("#b8ccc3"))
@@ -525,12 +577,49 @@ func _build_menu_overlay() -> void:
     column.add_child(continue_button)
 
     var play_button := Button.new()
-    play_button.text = "GIOCA"
+    play_button.text = "GIOCA · 1 CONTRO 1"
     play_button.custom_minimum_size = Vector2(290, 56)
     play_button.add_theme_font_size_override("font_size", 18)
     _style_button(play_button, true)
     play_button.pressed.connect(_start_selected_game)
     column.add_child(play_button)
+
+    var four_player_button := Button.new()
+    four_player_button.text = "4 GIOCATORI · SQUADRE  · BETA"
+    four_player_button.custom_minimum_size = Vector2(290, 50)
+    _style_button(four_player_button, false)
+    four_player_button.pressed.connect(_open_four_player)
+    column.add_child(four_player_button)
+
+    var install_button := Button.new()
+    install_button.text = "INSTALLA APP / GIOCA OFFLINE"
+    install_button.custom_minimum_size = Vector2(290, 42)
+    install_button.visible = OS.has_feature("web")
+    _style_button(install_button, false)
+    install_button.pressed.connect(_install_pwa)
+    column.add_child(install_button)
+
+    pwa_update_button = Button.new()
+    pwa_update_button.text = "AGGIORNAMENTO DISPONIBILE · APPLICA"
+    pwa_update_button.custom_minimum_size = Vector2(290, 42)
+    pwa_update_button.visible = false
+    _style_button(pwa_update_button, true)
+    pwa_update_button.pressed.connect(_apply_pwa_update)
+    column.add_child(pwa_update_button)
+
+    var tutorial_button := Button.new()
+    tutorial_button.text = "COME SI GIOCA"
+    tutorial_button.custom_minimum_size = Vector2(290, 44)
+    _style_button(tutorial_button, false)
+    tutorial_button.pressed.connect(_show_tutorial.bind(false))
+    column.add_child(tutorial_button)
+
+    var support_button := Button.new()
+    support_button.text = "SEGNALA UN PROBLEMA / FEEDBACK"
+    support_button.custom_minimum_size = Vector2(290, 40)
+    _style_button(support_button, false)
+    support_button.pressed.connect(_open_feedback.bind("general"))
+    column.add_child(support_button)
 
     var rules := Label.new()
     rules.text = "Prendi con la carta più forte del seme giocato,\no con una briscola. Vince chi supera 60 punti."
@@ -546,11 +635,108 @@ func _build_menu_overlay() -> void:
     column.add_child(stats_label)
 
     var note := Label.new()
-    note.text = "Mazzo napoletano · 40 carte · 20 prese"
+    note.text = "Mazzo napoletano · 40 carte · modalità classica e squadre"
     note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     note.add_theme_font_size_override("font_size", 12)
     note.add_theme_color_override("font_color", Color("#819b90"))
     column.add_child(note)
+
+    var version_label := Label.new()
+    version_label.text = "v%s" % str(ProjectSettings.get_setting("application/config/version", "dev"))
+    version_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    version_label.add_theme_font_size_override("font_size", 10)
+    version_label.add_theme_color_override("font_color", Color("#6f887d"))
+    column.add_child(version_label)
+
+
+func _build_tutorial_overlay() -> void:
+    tutorial_overlay = Control.new()
+    tutorial_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    tutorial_overlay.visible = false
+    tutorial_overlay.z_index = 85
+    add_child(tutorial_overlay)
+
+    var blocker := ColorRect.new()
+    blocker.color = Color(0.005, 0.02, 0.017, 0.80)
+    blocker.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    blocker.mouse_filter = Control.MOUSE_FILTER_STOP
+    tutorial_overlay.add_child(blocker)
+
+    var center := CenterContainer.new()
+    center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    tutorial_overlay.add_child(center)
+
+    tutorial_panel = _panel(Color(0.025, 0.095, 0.075, 0.99), 26, Color(0.86, 0.73, 0.38, 0.30))
+    tutorial_panel.custom_minimum_size = Vector2(520, 390)
+    center.add_child(tutorial_panel)
+
+    var margin := MarginContainer.new()
+    margin.add_theme_constant_override("margin_left", 38)
+    margin.add_theme_constant_override("margin_right", 38)
+    margin.add_theme_constant_override("margin_top", 30)
+    margin.add_theme_constant_override("margin_bottom", 28)
+    tutorial_panel.add_child(margin)
+
+    var column := VBoxContainer.new()
+    column.alignment = BoxContainer.ALIGNMENT_CENTER
+    column.add_theme_constant_override("separation", 18)
+    margin.add_child(column)
+
+    tutorial_progress = Label.new()
+    tutorial_progress.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    tutorial_progress.add_theme_font_size_override("font_size", 12)
+    tutorial_progress.add_theme_color_override("font_color", Color("#d5bf7a"))
+    column.add_child(tutorial_progress)
+
+    tutorial_title = Label.new()
+    tutorial_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    tutorial_title.add_theme_font_size_override("font_size", 28)
+    column.add_child(tutorial_title)
+
+    tutorial_body = Label.new()
+    tutorial_body.custom_minimum_size = Vector2(400, 145)
+    tutorial_body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    tutorial_body.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    tutorial_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    tutorial_body.add_theme_font_size_override("font_size", 16)
+    tutorial_body.add_theme_color_override("font_color", Color("#d9e6e0"))
+    column.add_child(tutorial_body)
+
+    var actions := HBoxContainer.new()
+    actions.alignment = BoxContainer.ALIGNMENT_CENTER
+    actions.add_theme_constant_override("separation", 12)
+    column.add_child(actions)
+
+    tutorial_back_button = Button.new()
+    tutorial_back_button.text = "Indietro"
+    tutorial_back_button.custom_minimum_size = Vector2(135, 46)
+    _style_button(tutorial_back_button, false)
+    tutorial_back_button.pressed.connect(_tutorial_previous)
+    actions.add_child(tutorial_back_button)
+
+    tutorial_next_button = Button.new()
+    tutorial_next_button.text = "Avanti"
+    tutorial_next_button.custom_minimum_size = Vector2(150, 46)
+    _style_button(tutorial_next_button, true)
+    tutorial_next_button.pressed.connect(_tutorial_next)
+    actions.add_child(tutorial_next_button)
+
+    var skip_button := Button.new()
+    skip_button.text = "Chiudi"
+    skip_button.custom_minimum_size = Vector2(110, 42)
+    _style_button(skip_button, false)
+    skip_button.pressed.connect(_close_tutorial)
+    column.add_child(skip_button)
+
+
+func _build_restart_dialog() -> void:
+    restart_dialog = ConfirmationDialog.new()
+    restart_dialog.title = "Ricominciare la partita?"
+    restart_dialog.dialog_text = "La partita attuale verrà eliminata e ne inizierà una nuova."
+    restart_dialog.ok_button_text = "Ricomincia"
+    restart_dialog.cancel_button_text = "Annulla"
+    restart_dialog.confirmed.connect(_confirm_restart)
+    add_child(restart_dialog)
 
 
 func _build_result_overlay() -> void:
@@ -571,7 +757,7 @@ func _build_result_overlay() -> void:
     result_overlay.add_child(center)
 
     result_panel = _panel(Color(0.025, 0.095, 0.075, 0.99), 28, Color(0.86, 0.73, 0.38, 0.3))
-    result_panel.custom_minimum_size = Vector2(500, 350)
+    result_panel.custom_minimum_size = Vector2(540, 500)
     center.add_child(result_panel)
     var panel := result_panel
 
@@ -610,6 +796,40 @@ func _build_result_overlay() -> void:
     result_detail.add_theme_color_override("font_color", Color("#a9beb5"))
     column.add_child(result_detail)
 
+    result_feedback_label = Label.new()
+    result_feedback_label.text = "Com'è stata la difficoltà della CPU?"
+    result_feedback_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    result_feedback_label.add_theme_font_size_override("font_size", 14)
+    result_feedback_label.add_theme_color_override("font_color", Color("#d9e6e0"))
+    column.add_child(result_feedback_label)
+
+    result_feedback_row = HBoxContainer.new()
+    result_feedback_row.alignment = BoxContainer.ALIGNMENT_CENTER
+    result_feedback_row.add_theme_constant_override("separation", 8)
+    column.add_child(result_feedback_row)
+
+    for feedback_data in [["Troppo facile", "too_easy"], ["Giusta", "fair"], ["Troppo difficile", "too_hard"]]:
+        var feedback_button := Button.new()
+        feedback_button.text = str(feedback_data[0])
+        feedback_button.custom_minimum_size = Vector2(142, 40)
+        _style_button(feedback_button, str(feedback_data[1]) == "fair")
+        feedback_button.pressed.connect(_record_ai_feedback.bind(str(feedback_data[1])))
+        result_feedback_row.add_child(feedback_button)
+
+    result_feedback_status = Label.new()
+    result_feedback_status.text = ""
+    result_feedback_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    result_feedback_status.add_theme_font_size_override("font_size", 12)
+    result_feedback_status.add_theme_color_override("font_color", Color("#d5bf7a"))
+    column.add_child(result_feedback_status)
+
+    var feedback := Button.new()
+    feedback.text = "Invia feedback dettagliato"
+    feedback.custom_minimum_size = Vector2(250, 42)
+    _style_button(feedback, false)
+    feedback.pressed.connect(_open_feedback.bind("playtest"))
+    column.add_child(feedback)
+
     var replay := Button.new()
     replay.text = "RIVINCITA"
     replay.custom_minimum_size = Vector2(250, 50)
@@ -637,7 +857,12 @@ func _on_restart_pressed() -> void:
     if busy:
         _set_status("Completo prima l'animazione in corso...")
         return
-    _new_game()
+    if restart_dialog != null:
+        restart_dialog.popup_centered(Vector2i(430, 190))
+
+
+func _confirm_restart() -> void:
+    await _new_game()
 
 
 func _on_difficulty_selected(index: int) -> void:
@@ -691,14 +916,89 @@ func _refresh_menu_state() -> void:
     stats_label.text = "Partite %d · Vittorie %d · Sconfitte %d · Pareggi %d" % [games, wins, losses, draws]
 
 
+func _show_tutorial(start_game_after: bool = false) -> void:
+    if tutorial_overlay == null:
+        return
+    _start_game_after_tutorial = start_game_after
+    tutorial_step = 0
+    tutorial_overlay.visible = true
+    _refresh_tutorial_step()
+
+
+func _refresh_tutorial_step() -> void:
+    if tutorial_overlay == null or TUTORIAL_STEPS.is_empty():
+        return
+    tutorial_step = clampi(tutorial_step, 0, TUTORIAL_STEPS.size() - 1)
+    var data: Dictionary = TUTORIAL_STEPS[tutorial_step]
+    tutorial_progress.text = "COME SI GIOCA  ·  %d/%d" % [tutorial_step + 1, TUTORIAL_STEPS.size()]
+    tutorial_title.text = str(data.get("title", ""))
+    tutorial_body.text = str(data.get("body", ""))
+    tutorial_back_button.disabled = tutorial_step == 0
+    tutorial_next_button.text = "GIOCA" if tutorial_step == TUTORIAL_STEPS.size() - 1 and _start_game_after_tutorial else ("Fine" if tutorial_step == TUTORIAL_STEPS.size() - 1 else "Avanti")
+
+
+func _tutorial_previous() -> void:
+    tutorial_step = max(0, tutorial_step - 1)
+    _refresh_tutorial_step()
+
+
+func _tutorial_next() -> void:
+    if tutorial_step < TUTORIAL_STEPS.size() - 1:
+        tutorial_step += 1
+        _refresh_tutorial_step()
+        return
+    _close_tutorial()
+
+
+func _close_tutorial() -> void:
+    if tutorial_overlay == null:
+        return
+    tutorial_overlay.visible = false
+    settings["tutorial_seen"] = true
+    persistence.save_settings(settings)
+    var should_start: bool = _start_game_after_tutorial
+    _start_game_after_tutorial = false
+    if should_start:
+        await _new_game()
+
+
+func _open_four_player() -> void:
+    if engine.trump_suit != "" and not engine.is_game_over():
+        _save_progress()
+    get_tree().change_scene_to_file("res://scenes/four_player.tscn")
+
+
+func _install_pwa() -> void:
+    if not OS.has_feature("web"):
+        return
+    JavaScriptBridge.eval("window.BriscolaPWA && window.BriscolaPWA.install();", true)
+
+
+func _refresh_pwa_update_button() -> void:
+    if not OS.has_feature("web") or pwa_update_button == null:
+        return
+    var available: Variant = JavaScriptBridge.eval("Boolean(window.BriscolaPWA && window.BriscolaPWA.state().updateAvailable)", true)
+    pwa_update_button.visible = bool(available)
+
+
+func _apply_pwa_update() -> void:
+    if not OS.has_feature("web"):
+        return
+    JavaScriptBridge.eval("window.BriscolaPWA && window.BriscolaPWA.applyUpdate();", true)
+
+
 func _start_selected_game() -> void:
     _on_difficulty_selected(difficulty_option.selected)
+    if not bool(settings.get("tutorial_seen", false)):
+        _show_tutorial(true)
+        return
     await _new_game()
 
 
 func _new_game() -> void:
     busy = true
     result_recorded = false
+    _last_leader = ""
     persistence.clear_saved_game()
     menu_overlay.visible = false
     result_overlay.visible = false
@@ -710,17 +1010,15 @@ func _new_game() -> void:
     _clear_container(opponent_hand)
     _refresh_table()
     _refresh_capture_piles()
-    _refresh_deck()
+    _prepare_initial_deck_visual()
     _refresh_header()
     difficulty_label.text = "CPU · %s" % _difficulty_display_name()
     _set_status("Distribuzione delle carte...")
     await get_tree().process_frame
     await _animate_initial_deal()
-    # Da questo momento la mano deve nascere già cliccabile: evita il caso in
-    # cui il primo giro resti con Button creati in stato disabled.
+    # Le carte finali sono già i nodi reali della mano: non ricrearle qui.
+    # Evita il piccolo "pop" che si vedeva al termine della distribuzione.
     busy = false
-    _refresh_hands()
-    _refresh_deck()
     _refresh_header()
     _save_progress()
     _set_hand_interaction(true)
@@ -744,6 +1042,7 @@ func _resume_saved_game() -> void:
     persistence.save_settings(settings)
     difficulty_option.select(_difficulty_index(cpu_difficulty))
     result_recorded = false
+    _last_leader = ""
     busy = true
     menu_overlay.visible = false
     result_overlay.visible = false
@@ -776,65 +1075,185 @@ func _resume_saved_game() -> void:
 func _save_progress() -> void:
     if engine.trump_suit == "" or engine.is_game_over():
         return
-    persistence.save_game(engine.to_dict(), cpu_difficulty)
+    if not persistence.save_game(engine.to_dict(), cpu_difficulty):
+        push_warning("Impossibile salvare lo stato corrente della partita.")
+        return
+    if OS.has_feature("web"):
+        JavaScriptBridge.force_fs_sync()
 
 
 func _animate_initial_deal() -> void:
     _clear_container(player_hand)
     _clear_container(opponent_hand)
+
+    # Prima costruiamo le vere carte della mano, ma invisibili. I Container
+    # possono così calcolare la posizione finale esatta prima che parta la
+    # prima animazione: nessuna carta "salta" quando il floater viene rimosso.
+    for index in range(3):
+        _append_initial_card("human", index, true)
+        _append_initial_card("cpu", index, true)
+
+    await get_tree().process_frame
+    await get_tree().process_frame
+    await _animate_deck_ready()
+
+    # Tony fa da mazziere: la prima carta va a chi gioca, poi a Tony, per tre
+    # giri. Ogni carta resta immediatamente nella posizione definitiva.
     for round_index in range(3):
         await _animate_initial_card("human", round_index)
-        _append_initial_card("human", round_index)
-        await get_tree().process_frame
+        await get_tree().create_timer(_anim_duration(0.035)).timeout
         await _animate_initial_card("cpu", round_index)
-        _append_initial_card("cpu", round_index)
-        await get_tree().process_frame
+        if round_index < 2:
+            await get_tree().create_timer(_anim_duration(0.055)).timeout
+
+    await _animate_initial_trump_reveal()
+
+    # Guardrail in caso di resize durante la distribuzione.
+    for child in player_hand.get_children():
+        child.modulate.a = 1.0
+    for child in opponent_hand.get_children():
+        child.modulate.a = 1.0
+
+
+func _prepare_initial_deck_visual() -> void:
+    _clear_container(deck_box)
+    var display_size: Vector2 = _deck_display_size()
+    for layer in range(3):
+        var back := _texture_card(BACK_TEXTURE, display_size)
+        back.rotation = deg_to_rad(-2.0 + float(layer) * 1.4)
+        back.pivot_offset = display_size * 0.5
+        deck_box.add_child(back)
+    if table_phase_label != null:
+        table_phase_label.text = "DISTRIBUZIONE"
+
+
+func _animate_initial_trump_reveal() -> void:
+    # Il motore conosce già la briscola, ma visivamente la scopriamo soltanto
+    # dopo la sesta carta, come su un tavolo reale.
+    _refresh_deck()
+    if deck_box == null or deck_box.get_child_count() == 0:
+        return
+    var trump := deck_box.get_child(deck_box.get_child_count() - 1) as Control
+    trump.modulate.a = 0.0
+    trump.scale = Vector2(0.82, 0.82)
+    trump.rotation = deg_to_rad(2.0)
+    await get_tree().process_frame
+    trump.pivot_offset = trump.size * 0.5
+    if bool(settings.get("reduced_motion", false)):
+        trump.modulate.a = 1.0
+        trump.scale = Vector2.ONE
+        trump.rotation = deg_to_rad(10.0)
+        return
+    var tween := create_tween()
+    tween.set_parallel(true)
+    tween.set_trans(Tween.TRANS_BACK)
+    tween.set_ease(Tween.EASE_OUT)
+    tween.tween_property(trump, "modulate:a", 1.0, _anim_duration(0.14))
+    tween.tween_property(trump, "scale", Vector2.ONE, _anim_duration(0.20))
+    tween.tween_property(trump, "rotation", deg_to_rad(10.0), _anim_duration(0.20))
+    await tween.finished
+    await get_tree().create_timer(_anim_duration(0.10)).timeout
+
+
+func _animate_deck_ready() -> void:
+    if bool(settings.get("reduced_motion", false)):
+        return
+    if deck_box == null:
+        return
+    deck_box.pivot_offset = deck_box.size * 0.5
+    var tween := create_tween()
+    tween.set_trans(Tween.TRANS_QUAD)
+    tween.set_ease(Tween.EASE_OUT)
+    tween.tween_property(deck_box, "rotation", deg_to_rad(-1.8), 0.055)
+    tween.tween_property(deck_box, "rotation", deg_to_rad(1.5), 0.070)
+    tween.tween_property(deck_box, "rotation", 0.0, 0.060)
+    await tween.finished
 
 
 func _animate_initial_card(player: String, index: int) -> void:
-    var source: Vector2 = _deck_source_position()
-    var target_size: Vector2 = card_size if player == "human" else small_card_size
-    var target: Vector2 = _initial_deal_target(player, index, target_size)
-    var floating := _floating_card(BACK_TEXTURE, small_card_size, source)
-    floating.rotation = deg_to_rad(-7.0 if player == "human" else 7.0)
-
-    var midpoint: Vector2 = source.lerp(target, 0.58) + Vector2(0, -28.0)
-    var first := create_tween()
-    first.set_parallel(true)
-    first.set_trans(Tween.TRANS_QUAD)
-    first.set_ease(Tween.EASE_OUT)
-    first.tween_property(floating, "position", midpoint, _anim_duration(0.10))
-    first.tween_property(floating, "size", small_card_size.lerp(target_size, 0.55), _anim_duration(0.10))
-    await first.finished
-
-    var second := create_tween()
-    second.set_parallel(true)
-    second.set_trans(Tween.TRANS_CUBIC)
-    second.set_ease(Tween.EASE_OUT)
-    second.tween_property(floating, "position", target, _anim_duration(0.12))
-    second.tween_property(floating, "size", target_size, _anim_duration(0.12))
-    second.tween_property(floating, "rotation", 0.0, _anim_duration(0.12))
-    await second.finished
+    var target_control: Control
+    var target_position: Vector2
+    var target_size: Vector2
+    var target_rotation: float = 0.0
 
     if player == "human":
+        if index >= player_hand.get_child_count():
+            return
+        var view := player_hand.get_child(index) as CardView
+        target_control = view
+        target_position = view.get_visual_global_position()
+        target_size = view.size
+        target_rotation = view.get_visual_global_rotation()
+    else:
+        if index >= opponent_hand.get_child_count():
+            return
+        target_control = opponent_hand.get_child(index) as Control
+        target_position = target_control.global_position
+        target_size = target_control.size
+        target_rotation = target_control.global_rotation
+
+    if target_size.x <= 1.0 or target_size.y <= 1.0:
+        target_size = card_size if player == "human" else small_card_size
+
+    var source: Vector2 = _deck_source_position()
+    var source_size: Vector2 = _deck_display_size()
+    var floating := _floating_card(BACK_TEXTURE, source_size, source)
+    floating.z_index = 60
+    floating.rotation = deg_to_rad(-5.0 if player == "human" else 5.0)
+
+    # Un arco breve con accelerazione iniziale e atterraggio morbido. La carta
+    # finisce esattamente sopra il nodo reale della mano.
+    var direction: float = 1.0 if player == "human" else -1.0
+    var midpoint: Vector2 = source.lerp(target_position, 0.56)
+    midpoint += Vector2(18.0 * direction, -34.0)
+
+    var travel := create_tween()
+    travel.set_parallel(true)
+    travel.set_trans(Tween.TRANS_QUAD)
+    travel.set_ease(Tween.EASE_OUT)
+    travel.tween_property(floating, "position", midpoint, _anim_duration(0.095))
+    travel.tween_property(floating, "size", source_size.lerp(target_size, 0.58), _anim_duration(0.095))
+    travel.tween_property(floating, "rotation", target_rotation * 0.35, _anim_duration(0.095))
+    await travel.finished
+
+    var land := create_tween()
+    land.set_parallel(true)
+    land.set_trans(Tween.TRANS_CUBIC)
+    land.set_ease(Tween.EASE_OUT)
+    land.tween_property(floating, "position", target_position, _anim_duration(0.115))
+    land.tween_property(floating, "size", target_size, _anim_duration(0.115))
+    land.tween_property(floating, "rotation", target_rotation, _anim_duration(0.115))
+    await land.finished
+    _play_sfx(SFX_CARD)
+
+    if player == "human":
+        # La carta arriva coperta e si gira una sola volta già nella posizione
+        # definitiva. Il nodo vero viene rivelato durante l'ultimo frame del flip.
         floating.pivot_offset = target_size * 0.5
         var close_flip := create_tween()
         close_flip.set_trans(Tween.TRANS_QUAD)
         close_flip.set_ease(Tween.EASE_IN)
-        close_flip.tween_property(floating, "scale:x", 0.04, _anim_duration(0.055))
+        close_flip.tween_property(floating, "scale:x", 0.035, _anim_duration(0.052))
         await close_flip.finished
+
         var card: Dictionary = engine.hands["human"][index]
         floating.texture = load(engine.card_texture_path(card))
         var open_flip := create_tween()
         open_flip.set_trans(Tween.TRANS_QUAD)
         open_flip.set_ease(Tween.EASE_OUT)
-        open_flip.tween_property(floating, "scale:x", 1.0, _anim_duration(0.07))
+        open_flip.tween_property(floating, "scale:x", 1.0, _anim_duration(0.070))
         await open_flip.finished
 
+    target_control.modulate.a = 1.0
+    # Un cross-fade quasi impercettibile evita qualunque seam tra carta volante
+    # e carta interattiva finale, soprattutto su browser/mobile lenti.
+    var settle := create_tween()
+    settle.tween_property(floating, "modulate:a", 0.0, _anim_duration(0.035))
+    await settle.finished
     floating.queue_free()
 
 
-func _append_initial_card(player: String, index: int) -> void:
+func _append_initial_card(player: String, index: int, hidden: bool = false) -> void:
     if player == "human":
         var card: Dictionary = engine.hands["human"][index]
         var view := CardView.new()
@@ -843,15 +1262,19 @@ func _append_initial_card(player: String, index: int) -> void:
         var fan_delta: float = float(index) - 1.0
         view.set_fan_pose(fan_delta * 5.0, abs(fan_delta) * 4.0)
         view.set_interactive(false)
+        view.modulate.a = 0.0 if hidden else 1.0
         player_hand.add_child(view)
     else:
         var back := _texture_card(BACK_TEXTURE, small_card_size)
         back.pivot_offset = small_card_size * 0.5
         back.rotation = deg_to_rad((float(index) - 1.0) * 5.0)
+        back.modulate.a = 0.0 if hidden else 1.0
         opponent_hand.add_child(back)
 
 
 func _initial_deal_target(player: String, index: int, target_size: Vector2) -> Vector2:
+    # Usato per le pescate successive. La prima distribuzione usa invece la
+    # posizione reale dei placeholder, già calcolata dai Container.
     var zone: Control = player_zone if player == "human" else opponent_zone
     var separation: float = -34.0
     if player == "human":
@@ -859,7 +1282,8 @@ func _initial_deal_target(player: String, index: int, target_size: Vector2) -> V
     elif not compact_layout:
         separation = -42.0
     var stride: float = target_size.x + separation
-    var total_width: float = target_size.x + stride * 2.0
+    var count: int = int(max(1, engine.hands[player].size()))
+    var total_width: float = target_size.x + stride * float(max(0, count - 1))
     var start_x: float = zone.global_position.x + (zone.size.x - total_width) * 0.5
     var y: float = zone.global_position.y + (zone.size.y - target_size.y) * 0.5
     return Vector2(start_x + stride * float(index), y)
@@ -971,9 +1395,18 @@ func _finish_trick() -> void:
     _refresh_capture_piles()
     _refresh_header()
 
-    if deck_before > 0:
-        await _animate_draw_to(winner, _anim_duration(0.22), true)
-        await _animate_draw_to(str(result["loser"]), _anim_duration(0.22), true)
+    var draws: Array = result.get("draws", [])
+    if deck_before > 0 and not draws.is_empty():
+        var visual_count: int = deck_before
+        for draw_value in draws:
+            var draw_info: Dictionary = draw_value
+            await _animate_draw_card(draw_info, _anim_duration(0.28))
+            visual_count = max(0, visual_count - 1)
+            _refresh_deck(visual_count)
+            await get_tree().create_timer(_anim_duration(0.06)).timeout
+
+        if visual_count == 0:
+            await _show_phase_notice("MAZZO ESAURITO  ·  NIENTE PIÙ PESCA")
 
     _refresh_hands()
     _refresh_deck()
@@ -1012,6 +1445,12 @@ func _pulse_human_turn() -> void:
 
 func _show_result() -> void:
     persistence.clear_saved_game()
+    if result_feedback_status != null:
+        result_feedback_status.text = ""
+    if result_feedback_row != null:
+        for child in result_feedback_row.get_children():
+            if child is Button:
+                (child as Button).disabled = false
     if not result_recorded:
         settings = persistence.record_result(settings, int(engine.scores["human"]), int(engine.scores["cpu"]))
         result_recorded = true
@@ -1034,14 +1473,24 @@ func _refresh_header() -> void:
     human_score_label.text = str(int(engine.scores["human"]))
     cpu_score_label.text = str(int(engine.scores["cpu"]))
     trick_label.text = "Presa %d / 20" % min(engine.trick_number, 20)
-    if engine.trump_suit != "":
-        trump_label.text = "Briscola · %s" % BriscolaEngine.SUIT_NAMES[engine.trump_suit]
-    else:
-        trump_label.text = "Briscola"
-    deck_label.text = "%d carte da pescare" % engine.deck.size()
+    if trump_label != null:
+        trump_label.text = "Briscola · %s" % BriscolaEngine.SUIT_NAMES.get(engine.trump_suit, "")
+    if deck_label != null:
+        deck_label.text = "%d carte da pescare" % engine.deck.size()
 
     var human_turn: bool = engine.current_player == "human"
-    turn_label.text = "Tocca a te" if human_turn else "Tony gioca"
+    if turn_label != null:
+        turn_label.text = "TOCCA A TE" if human_turn else "TONY PENSA"
+
+    var leader: String = _current_trick_leader()
+    var leader_changed: bool = leader != _last_leader
+    if cpu_lead_badge != null:
+        cpu_lead_badge.visible = leader == "cpu"
+    if human_lead_badge != null:
+        human_lead_badge.visible = leader == "human"
+    if leader_changed:
+        _last_leader = leader
+        _pulse_lead_badge(leader)
     if opponent_name_label != null:
         opponent_name_label.add_theme_color_override("font_color", Color("#d5bf7a") if not human_turn else Color("#a9bbb4"))
     if player_caption != null:
@@ -1054,6 +1503,30 @@ func _refresh_header() -> void:
         else:
             player_caption.text = "ATTENDI · Tony sta giocando" if not compact_layout else "ATTENDI TONY"
             player_caption.add_theme_color_override("font_color", Color("#96aaa2"))
+
+
+func _pulse_lead_badge(leader: String) -> void:
+    if bool(settings.get("reduced_motion", false)):
+        return
+    var badge: Label = human_lead_badge if leader == "human" else cpu_lead_badge
+    if badge == null or not badge.visible:
+        return
+    badge.pivot_offset = badge.size * 0.5
+    badge.scale = Vector2(0.88, 0.88)
+    badge.modulate = Color(1, 1, 1, 0.55)
+    var tween := create_tween()
+    tween.set_parallel(true)
+    tween.set_trans(Tween.TRANS_BACK)
+    tween.set_ease(Tween.EASE_OUT)
+    tween.tween_property(badge, "scale", Vector2.ONE, _anim_duration(0.18))
+    tween.tween_property(badge, "modulate", Color.WHITE, _anim_duration(0.14))
+
+
+func _current_trick_leader() -> String:
+    if not engine.table.is_empty():
+        var first_play: Dictionary = engine.table[0]
+        return str(first_play.get("player", engine.current_player))
+    return engine.current_player
 
 
 func _refresh_hands() -> void:
@@ -1090,25 +1563,47 @@ func _refresh_player_hand() -> void:
         player_hand.add_child(view)
 
 
-func _refresh_deck() -> void:
+func _refresh_deck(visual_count: int = -1) -> void:
     _clear_container(deck_box)
+    var remaining: int = engine.deck.size() if visual_count < 0 else visual_count
+    var display_size: Vector2 = _deck_display_size()
 
-    if engine.deck.size() > 1:
-        deck_box.add_child(_texture_card(BACK_TEXTURE, small_card_size))
-    else:
-        var empty_back := Control.new()
-        empty_back.custom_minimum_size = small_card_size
-        deck_box.add_child(empty_back)
+    # Un piccolo spessore visivo comunica quante carte restano senza usare un
+    # riquadro o un contatore invadente. La briscola resta scoperta di lato.
+    if remaining > 1:
+        var stack_layers: int = 1
+        if remaining > 12:
+            stack_layers = 2
+        if remaining > 24:
+            stack_layers = 3
+        for layer in range(stack_layers):
+            var back := _texture_card(BACK_TEXTURE, display_size)
+            back.rotation = deg_to_rad(-2.0 + float(layer) * 1.4)
+            back.pivot_offset = display_size * 0.5
+            deck_box.add_child(back)
 
-    if engine.deck.size() > 0:
-        var trump_view := _texture_card(engine.card_texture_path(engine.trump_card), small_card_size)
-        trump_view.rotation = deg_to_rad(8.0)
-        trump_view.pivot_offset = small_card_size * 0.5
+    if remaining > 0:
+        var trump_view := _texture_card(engine.card_texture_path(engine.trump_card), display_size)
+        trump_view.rotation = deg_to_rad(10.0)
+        trump_view.pivot_offset = display_size * 0.5
+        trump_view.tooltip_text = "Briscola: %s" % engine.card_name(engine.trump_card)
         deck_box.add_child(trump_view)
-    else:
-        var empty_trump := Control.new()
-        empty_trump.custom_minimum_size = small_card_size
-        deck_box.add_child(empty_trump)
+
+    if table_phase_label != null:
+        if remaining > 0:
+            var suit_name: String = str(BriscolaEngine.SUIT_NAMES.get(engine.trump_suit, engine.trump_suit)).to_upper()
+            if remaining == 1:
+                if compact_layout:
+                    table_phase_label.text = "BRISCOLA · %s\nULTIMA CARTA" % suit_name
+                else:
+                    table_phase_label.text = "BRISCOLA · %s · ULTIMA CARTA" % suit_name
+            else:
+                if compact_layout:
+                    table_phase_label.text = "BRISCOLA · %s\n%d CARTE" % [suit_name, remaining]
+                else:
+                    table_phase_label.text = "BRISCOLA · %s · %d CARTE" % [suit_name, remaining]
+        else:
+            table_phase_label.text = "FINALE · NIENTE PIÙ PESCA"
 
 
 func _refresh_table() -> void:
@@ -1238,6 +1733,8 @@ func _animate_card_to_slot(path: String, start_position: Vector2, start_size: Ve
 
 
 func _animate_trick_collection(played: Array, winner: String, points: int) -> void:
+    if table_turn_label != null:
+        table_turn_label.visible = false
     var floaters: Array = []
     var winner_floater: TextureRect = null
     var loser_floater: TextureRect = null
@@ -1327,6 +1824,8 @@ func _animate_trick_collection(played: Array, winner: String, points: int) -> vo
     trick_outcome_label.visible = false
     trick_outcome_label.modulate = Color.WHITE
     trick_outcome_label.scale = Vector2.ONE
+    if table_turn_label != null:
+        table_turn_label.visible = true
 
 
 func _show_trick_outcome(winner: String, points: int) -> void:
@@ -1374,22 +1873,46 @@ func _set_score_counter(value: float, label: Label) -> void:
     label.text = str(int(round(value)))
 
 
-func _animate_draw_to(player: String, duration: float, reveal_human: bool = false) -> void:
-    var source: Vector2 = _deck_source_position()
-    var target_container: Control = player_hand if player == "human" else opponent_hand
-    var target_size: Vector2 = card_size if player == "human" else small_card_size
-    var target: Vector2 = _control_center_position(target_container, target_size)
-    var floating := _floating_card(BACK_TEXTURE, small_card_size, source)
-    floating.rotation = deg_to_rad(-6.0 if player == "human" else 6.0)
+func _animate_draw_card(draw_info: Dictionary, duration: float) -> void:
+    var player: String = str(draw_info.get("player", ""))
+    var card: Dictionary = draw_info.get("card", {})
+    if player == "" or card.is_empty():
+        return
 
-    var midpoint: Vector2 = source.lerp(target, 0.58) + Vector2(0, -22.0)
+    var is_trump_card: bool = bool(draw_info.get("is_trump_card", false))
+    var source: Vector2 = _trump_source_position() if is_trump_card else _deck_source_position()
+    var target_size: Vector2 = card_size if player == "human" else small_card_size
+    var target_index: int = max(0, engine.hands[player].size() - 1)
+    var target: Vector2 = _initial_deal_target(player, target_index, target_size)
+    var start_texture: String = engine.card_texture_path(card) if is_trump_card else BACK_TEXTURE
+    var floating := _floating_card(start_texture, small_card_size, source)
+    floating.rotation = deg_to_rad(9.0 if is_trump_card else (-6.0 if player == "human" else 6.0))
+
+    var midpoint: Vector2 = source.lerp(target, 0.58) + Vector2(0, -24.0)
     var first := create_tween()
     first.set_parallel(true)
     first.set_trans(Tween.TRANS_QUAD)
     first.set_ease(Tween.EASE_OUT)
     first.tween_property(floating, "position", midpoint, duration * 0.48)
     first.tween_property(floating, "size", small_card_size.lerp(target_size, 0.55), duration * 0.48)
+    first.tween_property(floating, "rotation", floating.rotation * 0.35, duration * 0.48)
     await first.finished
+
+    # Le pescate coperte si girano solo per il giocatore umano. L'ultima
+    # briscola è già pubblica: vola scoperta verso chi la riceve.
+    if player == "human" and not is_trump_card:
+        floating.pivot_offset = floating.size * 0.5
+        var close_flip := create_tween()
+        close_flip.set_trans(Tween.TRANS_QUAD)
+        close_flip.set_ease(Tween.EASE_IN)
+        close_flip.tween_property(floating, "scale:x", 0.04, _anim_duration(0.055))
+        await close_flip.finished
+        floating.texture = load(engine.card_texture_path(card))
+        var open_flip := create_tween()
+        open_flip.set_trans(Tween.TRANS_QUAD)
+        open_flip.set_ease(Tween.EASE_OUT)
+        open_flip.tween_property(floating, "scale:x", 1.0, _anim_duration(0.07))
+        await open_flip.finished
 
     var second := create_tween()
     second.set_parallel(true)
@@ -1400,20 +1923,77 @@ func _animate_draw_to(player: String, duration: float, reveal_human: bool = fals
     second.tween_property(floating, "rotation", 0.0, duration * 0.52)
     await second.finished
 
-    if player == "human" and reveal_human and not engine.hands["human"].is_empty():
-        floating.pivot_offset = target_size * 0.5
-        var close_flip := create_tween()
-        close_flip.tween_property(floating, "scale:x", 0.04, _anim_duration(0.055))
-        await close_flip.finished
-        var drawn: Dictionary = engine.hands["human"][-1]
-        floating.texture = load(engine.card_texture_path(drawn))
-        var open_flip := create_tween()
-        open_flip.set_trans(Tween.TRANS_QUAD)
-        open_flip.set_ease(Tween.EASE_OUT)
-        open_flip.tween_property(floating, "scale:x", 1.0, _anim_duration(0.07))
-        await open_flip.finished
-
+    _append_drawn_visual(player, card)
     floating.queue_free()
+
+
+func _append_drawn_visual(player: String, card: Dictionary) -> void:
+    if player == "human":
+        var index: int = max(0, engine.hands["human"].size() - 1)
+        var view := CardView.new()
+        view.setup(card, index, load(engine.card_texture_path(card)), card_size, "%s · %d punti" % [engine.card_name(card), engine.points_for(card)])
+        view.card_selected.connect(_on_player_card_pressed)
+        var center_index: float = (float(engine.hands["human"].size()) - 1.0) * 0.5
+        var fan_delta: float = float(index) - center_index
+        view.set_fan_pose(fan_delta * 5.0, abs(fan_delta) * 4.0)
+        view.set_interactive(false)
+        player_hand.add_child(view)
+    else:
+        var back := _texture_card(BACK_TEXTURE, small_card_size)
+        opponent_hand.add_child(back)
+
+
+func _trump_source_position() -> Vector2:
+    if deck_box != null and deck_box.get_child_count() > 0:
+        var last := deck_box.get_child(deck_box.get_child_count() - 1) as Control
+        return last.global_position
+    return _deck_source_position()
+
+
+func _show_phase_notice(text: String) -> void:
+    if trick_outcome_label == null:
+        return
+    if table_turn_label != null:
+        table_turn_label.visible = false
+    trick_outcome_label.add_theme_font_size_override("font_size", 16)
+    trick_outcome_label.text = text
+    trick_outcome_label.visible = true
+    trick_outcome_label.modulate = Color(1, 1, 1, 0)
+    trick_outcome_label.scale = Vector2(0.96, 0.96)
+    var appear := create_tween()
+    appear.set_parallel(true)
+    appear.set_trans(Tween.TRANS_QUAD)
+    appear.set_ease(Tween.EASE_OUT)
+    appear.tween_property(trick_outcome_label, "modulate:a", 1.0, _anim_duration(0.16))
+    appear.tween_property(trick_outcome_label, "scale", Vector2.ONE, _anim_duration(0.18))
+    await appear.finished
+    await get_tree().create_timer(_anim_duration(0.62)).timeout
+    var fade := create_tween()
+    fade.tween_property(trick_outcome_label, "modulate:a", 0.0, _anim_duration(0.18))
+    await fade.finished
+    trick_outcome_label.visible = false
+    trick_outcome_label.modulate = Color.WHITE
+    trick_outcome_label.add_theme_font_size_override("font_size", 22)
+    if table_turn_label != null:
+        table_turn_label.visible = true
+
+
+func _warm_runtime_assets() -> void:
+    if _assets_warmed:
+        return
+    var paths: Array[String] = [BACK_TEXTURE, TABLE_TEXTURE, SFX_CARD, SFX_TAKE, SFX_SHUFFLE, SFX_WIN, SFX_LOSE]
+    for suit in BriscolaEngine.SUITS:
+        for rank in BriscolaEngine.RANKS:
+            var card: Dictionary = {"suit": suit, "rank": rank}
+            paths.append(engine.card_texture_path(card))
+
+    var failed: Array[String] = []
+    for path in paths:
+        if ResourceLoader.load(path) == null:
+            failed.append(path)
+    if not failed.is_empty():
+        push_error("Asset mancanti o non caricabili: %s" % [failed])
+    _assets_warmed = failed.is_empty()
 
 
 func _floating_card(path: String, card_size: Vector2, position_value: Vector2) -> TextureRect:
@@ -1427,6 +2007,10 @@ func _floating_card(path: String, card_size: Vector2, position_value: Vector2) -
     floating.mouse_filter = Control.MOUSE_FILTER_IGNORE
     animation_layer.add_child(floating)
     return floating
+
+
+func _deck_display_size() -> Vector2:
+    return small_card_size * 0.72 if compact_layout else small_card_size
 
 
 func _deck_source_position() -> Vector2:
@@ -1496,6 +2080,22 @@ func _badge_label(min_width: int) -> Label:
     return label
 
 
+func _lead_badge() -> Label:
+    var label := Label.new()
+    label.text = "DI MANO"
+    label.visible = false
+    label.custom_minimum_size = Vector2(82, 28)
+    label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    label.add_theme_font_size_override("font_size", 11)
+    label.add_theme_color_override("font_color", Color("#f2dda0"))
+    label.add_theme_color_override("font_outline_color", Color(0.01, 0.03, 0.025, 0.96))
+    label.add_theme_constant_override("outline_size", 5)
+    label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    label.z_index = 9
+    return label
+
+
 func _panel(color: Color, radius: int, border_color: Color = Color(1, 1, 1, 0.06)) -> PanelContainer:
     var panel := PanelContainer.new()
     var style := StyleBoxFlat.new()
@@ -1507,6 +2107,113 @@ func _panel(color: Color, radius: int, border_color: Color = Color(1, 1, 1, 0.06
     style.shadow_size = 8
     panel.add_theme_stylebox_override("panel", style)
     return panel
+
+
+func _record_ai_feedback(rating: String) -> void:
+    if rating not in ["too_easy", "fair", "too_hard"]:
+        return
+    var key: String = "ai_feedback_%s_%s" % [cpu_difficulty, rating]
+    settings[key] = int(settings.get(key, 0)) + 1
+    persistence.save_settings(settings)
+    if OS.has_feature("web"):
+        JavaScriptBridge.eval("window.BriscolaSupport && window.BriscolaSupport.recordPlaytest(%s, %s, %d, %d);" % [JSON.stringify(cpu_difficulty), JSON.stringify(rating), int(engine.scores["human"]), int(engine.scores["cpu"])], true)
+    if result_feedback_status != null:
+        result_feedback_status.text = "Grazie · feedback salvato"
+    if result_feedback_row != null:
+        for child in result_feedback_row.get_children():
+            if child is Button:
+                (child as Button).disabled = true
+
+
+func _open_feedback(kind: String = "general") -> void:
+    if OS.has_feature("web"):
+        var js_kind: String = JSON.stringify(kind)
+        var opened: Variant = JavaScriptBridge.eval("Boolean(window.BriscolaSupport && window.BriscolaSupport.openFeedback(%s))" % js_kind, true)
+        if bool(opened):
+            return
+    _set_status("Feedback: usa il link di supporto pubblicato insieme al gioco.")
+
+
+func _maybe_run_web_qa() -> void:
+    if not OS.has_feature("web"):
+        return
+    var mode_value: Variant = JavaScriptBridge.eval("new URLSearchParams(window.location.search).get('qa') || ''", true)
+    var mode: String = str(mode_value)
+    if mode.is_empty():
+        return
+    await _run_web_qa(mode)
+
+
+func _set_web_qa_status(status: String) -> void:
+    if not OS.has_feature("web"):
+        return
+    JavaScriptBridge.eval("window.__briscolaQaStatus = %s;" % JSON.stringify(status), true)
+
+
+func _run_web_qa(mode: String) -> void:
+    if mode == "4p":
+        _set_web_qa_status("switching-4p")
+        get_tree().change_scene_to_file("res://scenes/four_player.tscn")
+        return
+    _set_web_qa_status("starting")
+    settings["tutorial_seen"] = true
+    settings["reduced_motion"] = true
+    settings["sound_enabled"] = false
+    cpu_difficulty = "normal"
+    settings["difficulty"] = cpu_difficulty
+    persistence.save_settings(settings)
+    if reduced_motion_toggle != null:
+        reduced_motion_toggle.button_pressed = true
+    if sound_toggle != null:
+        sound_toggle.button_pressed = false
+
+    if mode == "fresh":
+        persistence.clear_saved_game()
+        await _new_game()
+        var human_moves := 0
+        while not engine.is_game_over() and human_moves < 5:
+            if not busy and engine.current_player == "human":
+                human_moves += 1
+                await _on_player_card_pressed(0)
+            else:
+                await get_tree().process_frame
+        _save_progress()
+        JavaScriptBridge.force_fs_sync()
+        _set_web_qa_status("saved")
+        return
+
+    if mode == "resume":
+        if not persistence.has_saved_game():
+            _set_web_qa_status("failed-no-save")
+            return
+        await _resume_saved_game()
+        var safety_moves := 0
+        while not engine.is_game_over() and safety_moves < 40:
+            if not busy and engine.current_player == "human":
+                safety_moves += 1
+                await _on_player_card_pressed(0)
+            else:
+                await get_tree().process_frame
+        if engine.is_game_over():
+            _set_web_qa_status("complete")
+        else:
+            _set_web_qa_status("failed-timeout")
+        return
+
+    if mode == "full":
+        persistence.clear_saved_game()
+        await _new_game()
+        var full_safety_moves := 0
+        while not engine.is_game_over() and full_safety_moves < 40:
+            if not busy and engine.current_player == "human":
+                full_safety_moves += 1
+                await _on_player_card_pressed(0)
+            else:
+                await get_tree().process_frame
+        _set_web_qa_status("complete" if engine.is_game_over() else "failed-timeout")
+        return
+
+    _set_web_qa_status("failed-unknown-mode")
 
 
 func _play_sfx(path: String) -> void:
@@ -1592,6 +2299,7 @@ func _apply_responsive_layout() -> void:
         header.add_theme_constant_override("separation", 5)
         menu_button.text = "☰"
         menu_button.custom_minimum_size = Vector2(52, 42)
+        help_button.custom_minimum_size = Vector2(44, 42)
         title_block.visible = false
         trick_label.custom_minimum_size = Vector2(102, 40)
         human_capture_target.custom_minimum_size = Vector2(88, 42)
@@ -1601,8 +2309,8 @@ func _apply_responsive_layout() -> void:
         player_zone.custom_minimum_size.y = 278 if portrait_mode else 205
         player_caption.text = "TOCCA UNA CARTA"
         player_caption.add_theme_font_size_override("font_size", 12)
-        deck_panel.visible = true
-        deck_panel.custom_minimum_size.x = 210
+        deck_panel.visible = false
+        deck_panel.custom_minimum_size.x = 0
         info_panel.visible = false
         table_row.add_theme_constant_override("separation", 6)
         table_margin.add_theme_constant_override("margin_left", 10)
@@ -1614,10 +2322,11 @@ func _apply_responsive_layout() -> void:
         restart_button.text = "↻"
         restart_button.custom_minimum_size = Vector2(52, 38)
         status_label.add_theme_font_size_override("font_size", 13)
-        menu_panel.custom_minimum_size = Vector2(560, 610)
+        menu_panel.custom_minimum_size = Vector2(560, 690)
+        tutorial_panel.custom_minimum_size = Vector2(520, 410)
         menu_margin.add_theme_constant_override("margin_left", 32)
         menu_margin.add_theme_constant_override("margin_right", 32)
-        result_panel.custom_minimum_size = Vector2(520, 360)
+        result_panel.custom_minimum_size = Vector2(560, 520)
     else:
         card_size = BASE_CARD_SIZE
         small_card_size = BASE_SMALL_CARD_SIZE
@@ -1630,6 +2339,7 @@ func _apply_responsive_layout() -> void:
         header.add_theme_constant_override("separation", 14)
         menu_button.text = "☰  Menu"
         menu_button.custom_minimum_size = Vector2(108, 42)
+        help_button.custom_minimum_size = Vector2(44, 42)
         title_block.visible = true
         trick_label.custom_minimum_size = Vector2(150, 38)
         human_capture_target.custom_minimum_size = Vector2(112, 44)
@@ -1639,9 +2349,9 @@ func _apply_responsive_layout() -> void:
         player_zone.custom_minimum_size.y = 194
         player_caption.text = "LA TUA MANO  ·  scegli una carta"
         player_caption.add_theme_font_size_override("font_size", 13)
-        deck_panel.visible = true
-        deck_panel.custom_minimum_size.x = 255
-        info_panel.visible = true
+        deck_panel.visible = false
+        deck_panel.custom_minimum_size.x = 0
+        info_panel.visible = false
         table_row.add_theme_constant_override("separation", 18)
         table_margin.add_theme_constant_override("margin_left", 22)
         table_margin.add_theme_constant_override("margin_right", 22)
@@ -1652,10 +2362,11 @@ func _apply_responsive_layout() -> void:
         restart_button.text = "Ricomincia"
         restart_button.custom_minimum_size = Vector2(128, 38)
         status_label.add_theme_font_size_override("font_size", 15)
-        menu_panel.custom_minimum_size = Vector2(520, 590)
+        menu_panel.custom_minimum_size = Vector2(520, 690)
+        tutorial_panel.custom_minimum_size = Vector2(520, 390)
         menu_margin.add_theme_constant_override("margin_left", 42)
         menu_margin.add_theme_constant_override("margin_right", 42)
-        result_panel.custom_minimum_size = Vector2(500, 350)
+        result_panel.custom_minimum_size = Vector2(540, 500)
 
     cpu_slot.custom_minimum_size = table_card_size
     human_slot.custom_minimum_size = table_card_size
@@ -1683,6 +2394,30 @@ func _layout_trick_slots() -> void:
     cpu_slot.position = center - slot_size * 0.5 + Vector2(-overlap_x, -12.0)
     human_slot.position = center - slot_size * 0.5 + Vector2(overlap_x, 15.0)
     _apply_natural_table_pose()
+
+    # Mazzo e briscola stanno fisicamente sul lato sinistro del tavolo.
+    if table_deck_anchor != null:
+        var deck_display: Vector2 = _deck_display_size()
+        var deck_width: float = deck_display.x * 2.0
+        var deck_height: float = deck_display.y + 48.0
+        table_deck_anchor.size = Vector2(deck_width, deck_height)
+        table_deck_anchor.position = Vector2(7.0, center.y - deck_height * 0.5)
+        deck_box.position = Vector2(0, 0)
+        deck_box.size = Vector2(deck_width, deck_display.y + 8.0)
+        deck_box.add_theme_constant_override("separation", int(round(-deck_display.x * 0.70)))
+        table_phase_label.position = Vector2(0, deck_display.y + 5.0)
+        table_phase_label.size = Vector2(deck_width, 42.0)
+
+    if table_turn_label != null:
+        table_turn_label.position = Vector2(center.x - 90.0, 34.0)
+        table_turn_label.size = Vector2(180.0, 30.0)
+
+    if cpu_lead_badge != null:
+        cpu_lead_badge.position = Vector2(center.x - 41.0, 4.0)
+        cpu_lead_badge.size = Vector2(82.0, 28.0)
+    if human_lead_badge != null:
+        human_lead_badge.position = Vector2(center.x - 41.0, surface_size.y - 32.0)
+        human_lead_badge.size = Vector2(82.0, 28.0)
 
     # Le prese vinte rimangono ai bordi del feltro: Tony in alto a destra,
     # il giocatore in basso a sinistra.

@@ -1,0 +1,32 @@
+name: Feedback playtest
+about: Valuta ritmo, chiarezza e difficoltà della CPU
+labels: [playtest]
+body:
+  - type: dropdown
+    id: difficulty
+    attributes:
+      label: Difficoltà provata
+      options: [Facile, Normale, Difficile]
+    validations:
+      required: true
+  - type: dropdown
+    id: cpu
+    attributes:
+      label: La CPU ti è sembrata...
+      options: [Troppo facile, Giusta, Troppo difficile, Imprevedibile/frustrante]
+    validations:
+      required: true
+  - type: dropdown
+    id: clarity
+    attributes:
+      label: Era sempre chiaro chi aveva preso la mano?
+      options: [Sì, Quasi sempre, No]
+    validations:
+      required: true
+  - type: textarea
+    id: feel
+    attributes:
+      label: Cosa miglioreresti?
+      description: Ritmo, animazioni, suoni, AI, leggibilità, mobile o altro.
+    validations:
+      required: true

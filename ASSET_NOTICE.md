@@ -17,3 +17,7 @@ Questo file non concede alcun diritto aggiuntivo sugli asset originali.
 ## Audio del prototipo
 
 I file in `assets/audio/` sono stati generati appositamente per questo prototipo e non provengono dal repository Bastoni.
+
+## Brand UI
+
+`icon.svg`, il watermark del tavolo e la palette UI della release candidate sono asset originali creati per questo progetto e non dipendono dagli SVG delle carte provenienti da Bastoni.

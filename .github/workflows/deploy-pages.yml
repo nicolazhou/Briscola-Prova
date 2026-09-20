@@ -1,7 +1,9 @@
-name: Deploy Godot Web to GitHub Pages
+name: Build, QA and Deploy Briscola Web
 
 on:
   push:
+    branches: ["main"]
+  pull_request:
     branches: ["main"]
   workflow_dispatch:
 
@@ -11,21 +13,26 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages"
+  group: "briscola-${{ github.ref }}"
   cancel-in-progress: true
 
 env:
   GODOT_VERSION: "4.3"
   GODOT_RELEASE: "4.3-stable"
   GODOT_TEMPLATE_VERSION: "4.3.stable"
+  BRISCOLA_VERSION: "0.8.1-rc5"
 
 jobs:
   build:
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+
+      - name: Release audit
+        run: python3 tools/release_audit.py
 
       - name: Install Godot 4.3
         shell: bash
@@ -56,8 +63,6 @@ jobs:
           mkdir -p "$TEMPLATE_DIR"
           cp -a /tmp/godot-templates/templates/. "$TEMPLATE_DIR/"
 
-          echo "Installed templates in: $TEMPLATE_DIR"
-          ls -lah "$TEMPLATE_DIR"
           test -f "$TEMPLATE_DIR/web_release.zip"
           test -f "$TEMPLATE_DIR/web_debug.zip"
           test -f "$TEMPLATE_DIR/web_nothreads_release.zip"
@@ -83,8 +88,42 @@ jobs:
           test -f build/web/index.js
           test -f build/web/index.wasm
           test -f build/web/index.pck
-          echo "Web export generated:"
-          find build/web -maxdepth 1 -type f -printf '%f\n' | sort
+          printf '%s\n' "$BRISCOLA_VERSION" > build/web/version.txt
+          printf '%s\n' "$GITHUB_SHA" > build/web/commit.txt
+
+      - name: Copy browser / PWA brand assets
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cp assets/pwa/apple-touch-icon.png build/web/apple-touch-icon.png
+          cp assets/pwa/icon-192.png build/web/icon-192.png
+          cp assets/pwa/icon-512.png build/web/icon-512.png
+
+      - name: Add production Web shell, support and monitoring hooks
+        env:
+          SUPPORT_URL: ${{ vars.SUPPORT_URL }}
+          ERROR_REPORT_ENDPOINT: ${{ vars.ERROR_REPORT_ENDPOINT }}
+          PLAYTEST_ENDPOINT: ${{ vars.PLAYTEST_ENDPOINT }}
+        run: python3 tools/postprocess_web.py
+
+      - name: Guard Web bundle size
+        shell: bash
+        run: |
+          set -euxo pipefail
+          BYTES="$(du -sb build/web | awk '{print $1}')"
+          echo "Web bundle bytes: $BYTES"
+          test "$BYTES" -lt 50000000
+          {
+            echo "### Briscola Web build"
+            echo "- Version: $BRISCOLA_VERSION"
+            echo "- Bundle: $BYTES bytes"
+            echo "- Godot: $GODOT_RELEASE"
+            if [ -n "${{ vars.ERROR_REPORT_ENDPOINT }}" ]; then
+              echo "- Error monitoring: remote endpoint configured"
+            else
+              echo "- Error monitoring: local diagnostics only"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Smoke test exported site
         shell: bash
@@ -103,16 +142,61 @@ jobs:
           curl -fsS -o /dev/null http://127.0.0.1:8765/index.js
           curl -fsS -o /dev/null http://127.0.0.1:8765/index.wasm
           curl -fsS -o /dev/null http://127.0.0.1:8765/index.pck
+          curl -fsS -o /dev/null http://127.0.0.1:8765/runtime.js
+          curl -fsS -o /dev/null http://127.0.0.1:8765/manifest.webmanifest
+          curl -fsS -o /dev/null http://127.0.0.1:8765/service-worker.js
+          curl -fsS -o /dev/null http://127.0.0.1:8765/icon-192.png
+          curl -fsS -o /dev/null http://127.0.0.1:8765/icon-512.png
+
+      - name: Setup Node for cross-browser QA
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Install Playwright QA dependencies
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium firefox webkit
+
+      - name: Cross-browser save/resume QA
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 -m http.server 8765 --directory build/web >/tmp/briscola-playwright-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+          PLAYWRIGHT_TEST_BASE_URL=http://127.0.0.1:8765 npm run test:browser
+
+      - name: Upload browser QA report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: playwright-report-${{ github.sha }}
+          path: playwright-report/
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Archive Web build for rollback
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: briscola-web-${{ github.sha }}
+          path: build/web
+          retention-days: 30
+          if-no-files-found: error
 
       - name: Configure Pages
+        if: ${{ github.event_name == 'push' }}
         uses: actions/configure-pages@v5
 
       - name: Upload Pages artifact
+        if: ${{ github.event_name == 'push' }}
         uses: actions/upload-pages-artifact@v4
         with:
           path: build/web
 
   deploy:
+    if: ${{ github.event_name == 'push' }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

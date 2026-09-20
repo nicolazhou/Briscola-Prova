@@ -1,0 +1,11 @@
+{
+  "name": "briscola-web-qa",
+  "private": true,
+  "version": "0.8.1-rc5",
+  "scripts": {
+    "test:browser": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}

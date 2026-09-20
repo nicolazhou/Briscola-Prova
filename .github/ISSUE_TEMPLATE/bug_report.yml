@@ -1,0 +1,31 @@
+name: Segnala un problema
+about: Bug, crash, input o comportamento anomalo
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Grazie. Indica cosa è successo; versione/browser vengono precompilati dal gioco quando possibile.
+  - type: textarea
+    id: what
+    attributes:
+      label: Cosa è successo?
+      description: Descrivi il problema e cosa ti aspettavi.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Passi per riprodurlo
+      placeholder: "1. Avvia una partita\n2. Gioca...\n3. ..."
+  - type: dropdown
+    id: device
+    attributes:
+      label: Dispositivo
+      options: [iPhone/iPad, Android, Windows, macOS, Linux, Altro]
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostica
+      description: Se hai aperto questo modulo dal gioco, lascia qui le informazioni già presenti.

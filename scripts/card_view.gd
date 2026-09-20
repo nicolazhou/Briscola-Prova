@@ -79,6 +79,12 @@ func get_visual_global_position() -> Vector2:
     return _visual_root.global_position
 
 
+func get_visual_global_rotation() -> float:
+    if _visual_root == null:
+        return global_rotation
+    return _visual_root.global_rotation
+
+
 func set_interactive(value: bool) -> void:
     disabled = not value
     mouse_filter = Control.MOUSE_FILTER_STOP if value else Control.MOUSE_FILTER_IGNORE

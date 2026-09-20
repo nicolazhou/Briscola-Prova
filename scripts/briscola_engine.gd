@@ -71,9 +71,10 @@ func new_game() -> void:
     played_history = []
     trick_number = 1
 
+    # Distribuzione reale a giri alternati: una carta al giocatore, una alla
+    # CPU, per tre volte. La sequenza coincide con l'animazione iniziale.
     for _i in range(3):
         hands["human"].append(deck.pop_back())
-    for _i in range(3):
         hands["cpu"].append(deck.pop_back())
 
     trump_card = deck.pop_back()
@@ -120,9 +121,16 @@ func resolve_trick() -> Dictionary:
     played_history.append(second_card.duplicate(true))
 
     var loser: String = other_player(winner)
+    var draws: Array = []
     for player in [winner, loser]:
         if not deck.is_empty():
-            hands[player].append(deck.pop_back())
+            var drawn: Dictionary = deck.pop_back()
+            hands[player].append(drawn)
+            draws.append({
+                "player": player,
+                "card": drawn.duplicate(true),
+                "is_trump_card": card_key(drawn) == card_key(trump_card),
+            })
 
     current_player = winner
     table.clear()
@@ -132,6 +140,7 @@ func resolve_trick() -> Dictionary:
         "loser": loser,
         "points": trick_points,
         "trick": trick_number,
+        "draws": draws,
     }
     trick_number += 1
     return result

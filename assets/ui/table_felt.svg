@@ -22,4 +22,10 @@
   <rect x="55" y="51" width="1170" height="616" rx="58" fill="url(#grain)" stroke="#ffffff" stroke-opacity="0.06"/>
   <ellipse cx="640" cy="357" rx="302" ry="182" fill="none" stroke="#d8c386" stroke-opacity="0.09" stroke-width="2"/>
   <ellipse cx="640" cy="357" rx="265" ry="150" fill="none" stroke="#ffffff" stroke-opacity="0.035" stroke-width="1"/>
+  <g opacity="0.045" transform="translate(640 360)">
+    <circle r="76" fill="none" stroke="#f0d78b" stroke-width="3"/>
+    <path d="M-34 38 L30 -39 M-30 -40 L35 39" stroke="#f0d78b" stroke-width="11" stroke-linecap="round"/>
+    <circle cx="-39" cy="45" r="9" fill="#f0d78b"/><circle cx="35" cy="-45" r="9" fill="#f0d78b"/>
+    <circle cx="-35" cy="-45" r="9" fill="#f0d78b"/><circle cx="40" cy="45" r="9" fill="#f0d78b"/>
+  </g>
 </svg>
