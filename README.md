@@ -95,3 +95,8 @@ The workflow installs Godot 4.3 and the matching official export templates expli
 `~/.local/share/godot/export_templates/4.3.stable/`
 
 It verifies `web_release.zip` and `web_debug.zip` before attempting the Web export, so a template problem fails with a precise error instead of Godot's generic `configuration errors` message.
+
+
+## GitHub Pages export fix v4
+
+This version enables `rendering/textures/vram_compression/import_etc2_astc=true`, required when the Web preset exports mobile VRAM texture compression, and explicitly verifies the single-threaded Web templates (`web_nothreads_release.zip` / `web_nothreads_debug.zip`).

@@ -60,9 +60,15 @@ jobs:
           ls -lah "$TEMPLATE_DIR"
           test -f "$TEMPLATE_DIR/web_release.zip"
           test -f "$TEMPLATE_DIR/web_debug.zip"
+          test -f "$TEMPLATE_DIR/web_nothreads_release.zip"
+          test -f "$TEMPLATE_DIR/web_nothreads_debug.zip"
 
       - name: Import assets and validate scripts
-        run: godot --headless --editor --path . --quit
+        run: |
+          set -euxo pipefail
+          godot --headless --editor --path . --quit
+          grep -n "import_etc2_astc" project.godot
+          test -d .godot
 
       - name: Run Briscola engine self-test
         run: godot --headless --path . -s res://scripts/self_test.gd
