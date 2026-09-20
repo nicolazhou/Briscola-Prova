@@ -78,3 +78,7 @@ Il repository include `export_presets.cfg` e `.github/workflows/deploy-pages.yml
 4. Il workflow esporta il progetto Godot per Web e pubblica `build/web` su GitHub Pages.
 
 Il workflow usa `barichello/godot-ci:4.3`, una versione compatibile con questo prototipo. Se in futuro il progetto richiede una versione Godot differente, aggiorna sia l'immagine Docker sia il percorso `4.3.stable` nel workflow.
+
+## CI note
+
+This package uses `lihop/setup-godot@v3` with `export-templates: true` so the GitHub runner installs the exact Godot 4.3 editor and matching export templates. This avoids depending on Docker HOME/template path relocation.
