@@ -1,102 +1,109 @@
-# Briscola Godot
+# Briscola Napoletana — Godot 4
 
-Prototipo giocabile di **Briscola 1 contro CPU** realizzato in Godot 4.x.
+Versione **production alpha** di una Briscola 1 contro CPU, realizzata in Godot 4.3 e pronta per export Web / GitHub Pages.
 
-## Funzioni già implementate
+## Cosa c'è in questa versione
 
-- mazzo italiano da 40 carte;
-- carte napoletane;
-- 3 carte iniziali per giocatore;
-- briscola scoperta e pescata per ultima;
-- turni e prese secondo le regole della Briscola;
-- pesca: il vincitore della presa pesca per primo;
-- punteggio corretto (Asso 11, Tre 10, Re 4, Cavallo 3, Fante 2);
-- CPU con strategia semplice: prova a vincere con la carta meno costosa e conserva carte di valore/briscole quando può;
-- partita completa di 20 prese;
-- vittoria, sconfitta e pareggio a 60;
-- click/touch sulle carte;
-- scorciatoie `1`, `2`, `3` per giocare le carte della mano;
-- layout in landscape pensato anche per schermi touch.
-
-## Aprire il progetto
-
-1. Installa Godot 4.x.
-2. Apri Godot Project Manager.
-3. Seleziona **Import** e scegli `project.godot` in questa cartella.
-4. Premi **F6/F5** o il pulsante Play.
-
-Non servono plugin o dipendenze esterne.
+- partita completa di Briscola a 2 giocatori;
+- mazzo napoletano da 40 carte;
+- menu iniziale;
+- tre difficoltà CPU: **Facile**, **Normale**, **Difficile**;
+- distribuzione iniziale animata;
+- carta del giocatore animata verso il tavolo;
+- carta CPU animata e girata sul tavolo;
+- animazione di raccolta della presa;
+- animazione di pesca dal mazzo;
+- hover/focus delle carte del giocatore;
+- scoreboard separato per giocatore e CPU;
+- schermata finale con rivincita/menu;
+- effetti sonori per shuffle, carta giocata, presa, vittoria e sconfitta;
+- interruttore effetti sonori;
+- scorciatoie `1`, `2`, `3` per giocare le carte;
+- layout landscape con stretch `canvas_items` + `expand`;
+- self-test delle regole + **200 partite complete simulate automaticamente**;
+- deploy automatico GitHub Pages tramite GitHub Actions.
 
 ## Struttura
 
 ```text
-briscola-godot/
+briscola-v5/
 ├── project.godot
+├── export_presets.cfg
 ├── scenes/
 │   └── main.tscn
 ├── scripts/
-│   ├── briscola_engine.gd   # regole e stato della partita
-│   ├── main.gd              # interfaccia e animazione del turno
-│   └── self_test.gd         # piccoli test delle regole
-└── assets/
-    └── cards/
+│   ├── briscola_engine.gd   # regole, stato e CPU
+│   ├── card_view.gd         # carta interattiva UI
+│   ├── main.gd              # flow, UI e animazioni
+│   └── self_test.gd         # regole + simulazioni complete
+├── assets/
+│   ├── cards/
+│   ├── audio/
+│   └── ui/
+└── .github/workflows/
+    └── deploy-pages.yml
 ```
 
-Il motore è intenzionalmente separato dalla UI. `BriscolaEngine` non dipende dalla scena principale: è quindi una buona base per aggiungere in seguito multiplayer, replay, bot diversi o una nuova interfaccia.
+## Avvio locale
 
-## Self-test
+Apri `project.godot` con Godot 4.3+ e premi **F6/F5**.
 
-Con Godot disponibile da terminale:
+Da terminale, per eseguire i test:
 
 ```bash
 godot --headless --path . -s res://scripts/self_test.gd
 ```
 
-Il test verifica i valori principali delle carte, alcuni casi di presa e la distribuzione iniziale.
+L'output atteso è:
 
-## Prossimi passi consigliati
+```text
+BriscolaEngine: self-test OK (rules + 200 simulated games)
+```
 
-1. Animazioni con Tween per distribuzione, gioco e raccolta delle carte.
-2. Audio per carta giocata, presa e fine partita.
-3. Selettore mazzo napoletano/piacentino.
-4. Difficoltà CPU (casuale, greedy, memoria delle carte).
-5. Menu principale e impostazioni.
-6. Multiplayer online con server autorevole (WebSocket/ENet).
-7. Export Web, Android, iOS e desktop.
+## Deploy GitHub Pages
 
-## Asset carte
+Il workflow è già incluso.
 
-Le carte napoletane e il retro sono state copiate dal progetto **Bastoni** fornito dall'utente come materiale di partenza. Nel pacchetto Bastoni analizzato non era presente un file di licenza; prima di distribuire o pubblicare il gioco, verifica i diritti/licenza degli asset grafici o sostituiscili con un mazzo di cui possiedi i diritti.
+1. Metti il contenuto di questa cartella nella root del repository.
+2. In GitHub: **Settings → Pages → Source: GitHub Actions**.
+3. Push su `main`.
+4. Il workflow:
+   - installa Godot 4.3;
+   - installa gli export template ufficiali;
+   - importa gli asset;
+   - compila gli script;
+   - esegue il self-test;
+   - esporta la build Web single-threaded;
+   - pubblica su GitHub Pages.
 
-## Deploy automatico su GitHub Pages
+## Difficoltà CPU
 
-Il repository include `export_presets.cfg` e `.github/workflows/deploy-pages.yml`.
+### Facile
+Sceglie una carta casualmente.
 
-1. Crea un repository GitHub e carica il contenuto di questa cartella nella branch `main`.
-2. In GitHub apri **Settings > Pages** e imposta **Source: GitHub Actions**.
-3. Fai un push su `main` (oppure avvia manualmente il workflow da **Actions**).
-4. Il workflow esporta il progetto Godot per Web e pubblica `build/web` su GitHub Pages.
+### Normale
+Cerca di vincere la presa usando la carta vincente meno costosa e tende a conservare carichi e briscole importanti.
 
-Il workflow usa `barichello/godot-ci:4.3`, una versione compatibile con questo prototipo. Se in futuro il progetto richiede una versione Godot differente, aggiorna sia l'immagine Docker sia il percorso `4.3.stable` nel workflow.
+### Difficile
+Valuta anche il valore della presa corrente e tende a non sprecare briscole/carichi sulle prese povere. È ancora un'AI euristica, non una AI perfetta con memoria completa delle carte.
 
-## CI note
+## Stato del prodotto
 
-This package uses `lihop/setup-godot@v3` with `export-templates: true` so the GitHub runner installs the exact Godot 4.3 editor and matching export templates. This avoids depending on Docker HOME/template path relocation.
+Questa versione è una **production alpha**: l'esperienza di gioco è molto più vicina a un prodotto reale, ma prima di una release commerciale restano consigliati:
 
+- test manuali su Chrome, Safari, Firefox, Android e iPhone;
+- UI specifica portrait/mobile;
+- salvataggio impostazioni e partita;
+- accessibilità più completa;
+- audio professionale;
+- bot difficile con memoria delle carte giocate;
+- telemetria/crash reporting se previsto;
+- verifica licenze asset;
+- privacy/termini se vengono aggiunti account o analytics;
+- backend autorevole se verrà aggiunto multiplayer.
 
-## CI validation
+## Asset e licenze
 
-The GitHub Actions workflow validates GDScript imports, runs `scripts/self_test.gd`, and only then exports the Web build. This makes script/type errors visible before the export step.
+Le carte napoletane e il retro derivano dal progetto **Bastoni** fornito come materiale di partenza. Nel repository originario analizzato non era presente una licenza chiara per questi asset: **prima di una distribuzione pubblica/commerciale verifica i diritti oppure sostituisci le carte con asset di cui possiedi la licenza**.
 
-## GitHub Pages CI note (v3)
-
-The workflow installs Godot 4.3 and the matching official export templates explicitly into:
-
-`~/.local/share/godot/export_templates/4.3.stable/`
-
-It verifies `web_release.zip` and `web_debug.zip` before attempting the Web export, so a template problem fails with a precise error instead of Godot's generic `configuration errors` message.
-
-
-## GitHub Pages export fix v4
-
-This version enables `rendering/textures/vram_compression/import_etc2_astc=true`, required when the Web preset exports mobile VRAM texture compression, and explicitly verifies the single-threaded Web templates (`web_nothreads_release.zip` / `web_nothreads_debug.zip`).
+Gli effetti sonori presenti in questa versione sono stati generati appositamente per il prototipo.

@@ -32,7 +32,6 @@ const POINTS := {
     8: 2,
 }
 
-# Ordine di presa nella Briscola: Asso, Tre, Re, Cavallo, Fante, 7, 6, 5, 4, 2.
 const STRENGTH := {
     1: 10,
     3: 9,
@@ -70,19 +69,14 @@ func new_game() -> void:
     scores = {"human": 0, "cpu": 0}
     trick_number = 1
 
-    # Tre carte a testa.
     for _i in range(3):
         hands["human"].append(deck.pop_back())
     for _i in range(3):
         hands["cpu"].append(deck.pop_back())
 
-    # La carta successiva determina la briscola e resta in fondo al mazzo:
-    # verrà pescata per ultima.
     trump_card = deck.pop_back()
-    trump_suit = trump_card["suit"]
+    trump_suit = str(trump_card["suit"])
     deck.push_front(trump_card)
-
-    # In questo prototipo il giocatore umano apre la prima presa.
     current_player = "human"
 
 
@@ -109,17 +103,18 @@ func resolve_trick() -> Dictionary:
 
     var first: Dictionary = table[0]
     var second: Dictionary = table[1]
+    var first_card: Dictionary = first["card"]
+    var second_card: Dictionary = second["card"]
     var winner: String = str(first["player"])
 
-    if second_card_wins(first["card"], second["card"], trump_suit):
+    if second_card_wins(first_card, second_card, trump_suit):
         winner = str(second["player"])
 
-    var trick_points: int = points_for(first["card"]) + points_for(second["card"])
+    var trick_points: int = points_for(first_card) + points_for(second_card)
     scores[winner] += trick_points
-    captured[winner].append(first["card"])
-    captured[winner].append(second["card"])
+    captured[winner].append(first_card)
+    captured[winner].append(second_card)
 
-    # Il vincitore pesca per primo e apre la presa successiva.
     var loser: String = other_player(winner)
     for player in [winner, loser]:
         if not deck.is_empty():
@@ -130,6 +125,7 @@ func resolve_trick() -> Dictionary:
 
     var result: Dictionary = {
         "winner": winner,
+        "loser": loser,
         "points": trick_points,
         "trick": trick_number,
     }
@@ -137,30 +133,80 @@ func resolve_trick() -> Dictionary:
     return result
 
 
-func choose_cpu_card() -> int:
+func choose_cpu_card(difficulty: String = "normal") -> int:
     var hand: Array = hands["cpu"]
     if hand.is_empty():
         return -1
 
-    # Se la CPU risponde a una carta, prova a vincere usando la carta meno costosa.
+    if difficulty == "easy":
+        return randi_range(0, hand.size() - 1)
+    if difficulty == "hard":
+        return _choose_hard_card(hand)
+    return _choose_normal_card(hand)
+
+
+func _choose_normal_card(hand: Array) -> int:
     if table.size() == 1:
-        var lead_card: Dictionary = table[0]["card"]
+        var lead_play: Dictionary = table[0]
+        var lead_card: Dictionary = lead_play["card"]
         var winning_indices: Array = []
         for i in range(hand.size()):
-            if second_card_wins(lead_card, hand[i], trump_suit):
+            var candidate: Dictionary = hand[i]
+            if second_card_wins(lead_card, candidate, trump_suit):
                 winning_indices.append(i)
 
         if not winning_indices.is_empty():
-            var best_index: int = winning_indices[0]
+            var best_index: int = int(winning_indices[0])
             var best_cost: int = cpu_card_cost(hand[best_index])
-            for index in winning_indices:
+            for value in winning_indices:
+                var index: int = int(value)
                 var cost: int = cpu_card_cost(hand[index])
                 if cost < best_cost:
                     best_cost = cost
                     best_index = index
             return best_index
 
-    # Altrimenti conserva assi, tre e briscole importanti quando possibile.
+    return _lowest_cost_index(hand)
+
+
+func _choose_hard_card(hand: Array) -> int:
+    if table.size() == 1:
+        var lead_play: Dictionary = table[0]
+        var lead_card: Dictionary = lead_play["card"]
+        var available_points: int = points_for(lead_card)
+        var winning_indices: Array = []
+        var losing_indices: Array = []
+
+        for i in range(hand.size()):
+            var candidate: Dictionary = hand[i]
+            if second_card_wins(lead_card, candidate, trump_suit):
+                winning_indices.append(i)
+            else:
+                losing_indices.append(i)
+
+        # Con punti importanti sul tavolo prende, ma con la carta vincente meno preziosa.
+        if available_points >= 4 and not winning_indices.is_empty():
+            return _lowest_cost_from_indices(hand, winning_indices)
+
+        # Se la presa vale poco, preferisce scartare senza consumare una briscola o un carico.
+        if not losing_indices.is_empty():
+            return _lowest_cost_from_indices(hand, losing_indices)
+
+        if not winning_indices.is_empty():
+            return _lowest_cost_from_indices(hand, winning_indices)
+
+    # Quando apre, evita i carichi e le briscole forti; a mazzo esaurito pesa di più la forza.
+    var selected: int = 0
+    var selected_cost: int = cpu_lead_cost(hand[0])
+    for i in range(1, hand.size()):
+        var cost: int = cpu_lead_cost(hand[i])
+        if cost < selected_cost:
+            selected = i
+            selected_cost = cost
+    return selected
+
+
+func _lowest_cost_index(hand: Array) -> int:
     var selected: int = 0
     var selected_cost: int = cpu_card_cost(hand[0])
     for i in range(1, hand.size()):
@@ -171,18 +217,37 @@ func choose_cpu_card() -> int:
     return selected
 
 
+func _lowest_cost_from_indices(hand: Array, indices: Array) -> int:
+    var selected: int = int(indices[0])
+    var selected_cost: int = cpu_card_cost(hand[selected])
+    for value in indices:
+        var index: int = int(value)
+        var cost: int = cpu_card_cost(hand[index])
+        if cost < selected_cost:
+            selected = index
+            selected_cost = cost
+    return selected
+
+
 func cpu_card_cost(card: Dictionary) -> int:
     var cost: int = points_for(card) * 100 + strength_for(card)
-    if card["suit"] == trump_suit:
-        cost += 20
+    if str(card["suit"]) == trump_suit:
+        cost += 24
+    return cost
+
+
+func cpu_lead_cost(card: Dictionary) -> int:
+    var cost: int = cpu_card_cost(card)
+    if deck.is_empty():
+        cost += strength_for(card) * 4
     return cost
 
 
 func second_card_wins(first: Dictionary, second: Dictionary, trump: String) -> bool:
-    if second["suit"] == first["suit"]:
+    if str(second["suit"]) == str(first["suit"]):
         return strength_for(second) > strength_for(first)
 
-    if second["suit"] == trump and first["suit"] != trump:
+    if str(second["suit"]) == trump and str(first["suit"]) != trump:
         return true
 
     return false
@@ -219,4 +284,4 @@ func card_name(card: Dictionary) -> String:
 
 
 func card_texture_path(card: Dictionary) -> String:
-    return "res://assets/cards/napoletane/%s/%02d.svg" % [card["suit"], card["rank"]]
+    return "res://assets/cards/napoletane/%s/%02d.svg" % [str(card["suit"]), int(card["rank"])]
