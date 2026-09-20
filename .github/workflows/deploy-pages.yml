@@ -20,7 +20,7 @@ env:
   GODOT_VERSION: "4.3"
   GODOT_RELEASE: "4.3-stable"
   GODOT_TEMPLATE_VERSION: "4.3.stable"
-  BRISCOLA_VERSION: "0.8.3-rc7"
+  BRISCOLA_VERSION: "0.8.3-rc8"
 
 jobs:
   build:

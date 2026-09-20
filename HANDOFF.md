@@ -135,3 +135,8 @@ Quando `deck.is_empty()` dopo l'ultima sequenza di pescata, la UI entra nel fina
 ## QA CI performance (0.8.3-rc7)
 
 Il QA browser e deliberatamente diviso in due livelli. I flussi costosi (save/resume, 4P completa, PWA offline) girano una sola volta su Chromium. Gli altri profili eseguono smoke test in parallelo. Non reintrodurre partite animate complete in `?qa=`: i test browser devono pilotare il motore direttamente; animazioni e game feel appartengono a QA/playtest manuale.
+
+
+## Firefox headless CI (0.8.3-rc8)
+
+Godot 4 Web requires WebGL2 in production. The Linux GitHub Actions Firefox headless environment can report no WebGL2 context even when the same Firefox release works on a normal GPU-backed desktop. For that reason Firefox CI is intentionally a non-rendering compatibility smoke: browser startup + WebAssembly + production payload availability. Chromium and WebKit still perform real Godot boots; Firefox rendering is retained in the manual device/browser QA checklist. Do not re-introduce `expect(getContext("webgl2")).toBeTruthy()` as a Linux-headless deployment gate without provisioning a reliable graphics backend.

@@ -1,7 +1,7 @@
 {
   "name": "briscola-web-qa",
   "private": true,
-  "version": "0.8.3-rc7",
+  "version": "0.8.3-rc8",
   "scripts": {
     "test:browser": "playwright test"
   },

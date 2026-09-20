@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / "build" / "web"
 INDEX = BUILD / "index.html"
 
-version = os.environ.get("BRISCOLA_VERSION", "0.8.3-rc7")
+version = os.environ.get("BRISCOLA_VERSION", "0.8.3-rc8")
 commit = os.environ.get("GITHUB_SHA", "local")
 repo = os.environ.get("GITHUB_REPOSITORY", "")
 support_url = os.environ.get("SUPPORT_URL", "").strip()

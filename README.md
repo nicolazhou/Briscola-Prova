@@ -1,4 +1,4 @@
-**Versione 0.8.3-rc7**
+**Versione 0.8.3-rc8**
 
 # Briscola Napoletana — Godot 4
 
@@ -96,7 +96,7 @@ Documenti: `PWA.md`, `VARIANTS.md`, `SINGLE_PLAYER_PRODUCTION.md`.
 
 La modalità 4 giocatori riceve il primo vero passaggio di game-feel: deal alternato sui quattro lati, giocate animate, pile di prese per squadra, indicatore del giocatore di mano e pescata a quattro. Il ramo 1v1 rimane congelato salvo regressioni.
 
-## QA browser veloce (0.8.3-rc7)
+## QA browser veloce (0.8.3-rc8)
 
 La pipeline browser e stata ridisegnata per non riprodurre una partita animata completa su ogni browser.
 

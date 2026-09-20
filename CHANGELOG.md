@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.3-rc8
+
+- Fixed a false-negative Firefox CI gate: headless Firefox on Linux may expose no WebGL2 context even when production Firefox browsers are supported.
+- Firefox smoke QA now validates browser startup, WebAssembly support and reachability of the production Godot payload (`index.js`, `index.wasm`, `index.pck`).
+- Firefox WebGL2 availability is attached to the Playwright report as diagnostics instead of failing the deployment.
+- Chromium/WebKit/iPhone/Android smoke tests continue to require a real Godot application boot.
+
 ## 0.8.3-rc7
 
 - CI/browser QA accelerato: test completi solo su Chromium, smoke boot paralleli sugli altri profili.

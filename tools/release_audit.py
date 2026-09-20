@@ -6,7 +6,7 @@ import re
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "0.8.3-rc7"
+EXPECTED_VERSION = "0.8.3-rc8"
 SUITS = ("bastoni", "coppe", "denari", "spade")
 
 errors: list[str] = []
